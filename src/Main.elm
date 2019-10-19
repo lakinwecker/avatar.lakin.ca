@@ -11,9 +11,29 @@ import Tuple
 import Time
 import Url
 import String
+import Debug
 
 
----- Logic ----
+---- Utils ----
+
+
+wrap : Int -> Int -> Int
+wrap max val =
+    case val < 0 of
+        True ->
+            val + max
+
+        False ->
+            case val >= max of
+                True ->
+                    val - max
+
+                False ->
+                    val
+
+
+
+---- Base Types ----
 
 
 type alias Flags =
@@ -30,13 +50,50 @@ type alias Session =
     }
 
 
-type CellState
-    = Alive
-    | Dead
+
+---- Cell ----
 
 
-type alias Cell =
-    { aliveNeighbours : Int, state : CellState }
+type alias Neighbours =
+    { white : Int, black : Int }
+
+
+type Cell
+    = White Neighbours
+    | Black Neighbours
+    | Dead Neighbours
+
+
+type alias CellCtor =
+    Neighbours -> Cell
+
+
+neighbourCount : (Neighbours -> Int) -> Cell -> Int
+neighbourCount getCount cell =
+    case cell of
+        White n ->
+            getCount n
+
+        Black n ->
+            getCount n
+
+        Dead n ->
+            getCount n
+
+
+totalNeighbors : Cell -> Int
+totalNeighbors =
+    neighbourCount (\n -> n.white + n.black)
+
+
+blackNeighbours : Cell -> Int
+blackNeighbours =
+    neighbourCount .black
+
+
+whiteNeighbours : Cell -> Int
+whiteNeighbours =
+    neighbourCount .white
 
 
 type alias Index =
@@ -61,6 +118,21 @@ white =
     style "background-color" "rgb(255, 255, 255)"
 
 
+black : Attribute Msg
+black =
+    style "background-color" "rgb(0, 0, 0)"
+
+
+grey : Attribute Msg
+grey =
+    style "background-color" "rgb(128, 128, 128)"
+
+
+whiteFont : Attribute Msg
+whiteFont =
+    style "color" "rgb(255, 255, 255)"
+
+
 x : Index -> Int
 x idx =
     Tuple.first idx
@@ -76,9 +148,14 @@ shouldDebug =
     False
 
 
+defaultNeighbours : Neighbours
+defaultNeighbours =
+    { white = 0, black = 0 }
+
+
 defaultCell : Cell
 defaultCell =
-    { aliveNeighbours = 0, state = Dead }
+    Dead defaultNeighbours
 
 
 neighbourOffsets : List Index
@@ -94,21 +171,6 @@ neighbourOffsets =
     ]
 
 
-wrap : Int -> Int -> Int
-wrap max val =
-    case val < 0 of
-        True ->
-            val + max
-
-        False ->
-            case val >= max of
-                True ->
-                    val - max
-
-                False ->
-                    val
-
-
 neighbours : Index -> Board -> List Index
 neighbours idx board =
     List.map
@@ -118,8 +180,8 @@ neighbours idx board =
         neighbourOffsets
 
 
-modifyNeighbourCount : Int -> Index -> Board -> Board
-modifyNeighbourCount i idx board =
+updateNeighbour : ( Int, Int ) -> Index -> Board -> Board
+updateNeighbour i idx board =
     let
         c =
             Maybe.withDefault
@@ -130,85 +192,192 @@ modifyNeighbourCount i idx board =
             | cells =
                 Dict.insert
                     idx
-                    ({ c | aliveNeighbours = (c.aliveNeighbours + i) })
+                    (modifyNeighbourCount i c)
                     board.cells
         }
 
 
-changeCell : CellState -> Int -> Index -> Board -> Board
-changeCell state i idx board =
+modifyNeighbourCount : ( Int, Int ) -> Cell -> Cell
+modifyNeighbourCount ( w, b ) c =
+    case c of
+        White n ->
+            White { white = n.white + w, black = n.black + b }
+
+        Black n ->
+            Black { white = n.white + w, black = n.black + b }
+
+        Dead n ->
+            Dead { white = n.white + w, black = n.black + b }
+
+
+modifyCellType : CellCtor -> Cell -> Cell
+modifyCellType new c =
+    case c of
+        White n ->
+            new n
+
+        Black n ->
+            new n
+
+        Dead n ->
+            new n
+
+
+changeCell : CellCtor -> ( Int, Int ) -> Index -> Board -> Board
+changeCell newType i idx board =
     let
         c =
             Maybe.withDefault
                 defaultCell
                 (Dict.get idx board.cells)
 
-        newBoard =
+        updatedNeighbours =
             (List.foldl
-                (modifyNeighbourCount i)
+                (updateNeighbour i)
                 board
                 (neighbours idx board)
             )
     in
-        { newBoard
+        { updatedNeighbours
             | cells =
                 Dict.insert
                     idx
-                    { c | state = state }
-                    newBoard.cells
+                    (modifyCellType newType c)
+                    updatedNeighbours.cells
         }
 
 
-live : Index -> Board -> Board
-live =
-    changeCell Alive 1
+liveWhite : Index -> Board -> Board
+liveWhite =
+    changeCell White ( 1, 0 )
+
+
+liveBlack : Index -> Board -> Board
+liveBlack =
+    changeCell Black ( 0, 1 )
 
 
 die : Index -> Board -> Board
-die =
-    changeCell Dead -1
+die idx board =
+    let
+        c =
+            Maybe.withDefault
+                defaultCell
+                (Dict.get idx board.cells)
+
+        modifiers =
+            case c of
+                White _ ->
+                    ( -1, 0 )
+
+                _ ->
+                    ( 0, -1 )
+    in
+        changeCell Dead modifiers idx board
 
 
-shouldDie : Board -> List Index
-shouldDie board =
-    Dict.keys
-        (Dict.filter
-            (\idx cell ->
-                cell.state == Alive && (cell.aliveNeighbours < 2 || cell.aliveNeighbours > 3)
+indicesThatShouldDie : Board -> List Index
+indicesThatShouldDie board =
+    List.map
+        Tuple.first
+        (Dict.toList
+            (Dict.filter
+                (\idx cell ->
+                    let
+                        n =
+                            totalNeighbors cell
+                    in
+                        (n < 2 || n > 3)
+                )
+                (aliveCells board.cells)
             )
-            board.cells
         )
 
 
-shouldLive : Board -> List Index
-shouldLive board =
-    Dict.keys
-        (Dict.filter
-            (\idx cell ->
-                cell.state == Dead && cell.aliveNeighbours == 3
+indicesThatShouldBeColor : Board -> (Int -> Int -> Bool) -> List Index
+indicesThatShouldBeColor board colorMatch =
+    List.map
+        Tuple.first
+        (Dict.toList
+            (Dict.filter
+                (\idx cell ->
+                    let
+                        blackN =
+                            blackNeighbours cell
+
+                        whiteN =
+                            whiteNeighbours cell
+                    in
+                        (blackN + whiteN) == 3 && (colorMatch whiteN blackN)
+                )
+                (deadCells board.cells)
             )
-            board.cells
         )
+
+
+indicesThatShouldLiveWhite : Board -> List Index
+indicesThatShouldLiveWhite board =
+    indicesThatShouldBeColor board (\w b -> w < 2)
+
+
+indicesThatShouldLiveBlack : Board -> List Index
+indicesThatShouldLiveBlack board =
+    indicesThatShouldBeColor board (\w b -> b < 2)
+
+
+isAlive : Cell -> Bool
+isAlive c =
+    case c of
+        White _ ->
+            True
+
+        Black _ ->
+            True
+
+        Dead _ ->
+            False
+
+
+deadCells : Cells -> Cells
+deadCells cells =
+    Dict.filter
+        (\idx c -> not (isAlive c))
+        cells
+
+
+aliveCells : Cells -> Cells
+aliveCells cells =
+    Dict.filter
+        (\idx c -> isAlive c)
+        cells
 
 
 evolve : Board -> Board
 evolve board =
     let
-        newBoard =
-            List.foldl
-                live
-                (List.foldl
-                    die
-                    board
-                    (shouldDie board)
-                )
-                (shouldLive board)
+        shouldDie =
+            indicesThatShouldDie board
+
+        shouldLiveBlack =
+            indicesThatShouldLiveBlack board
+
+        shouldLiveWhite =
+            indicesThatShouldLiveWhite board
+
+        clearedDead =
+            List.foldl die board shouldDie
+
+        newWhite =
+            List.foldl liveWhite clearedDead shouldLiveWhite
+
+        evolvedBoard =
+            List.foldl liveBlack newWhite shouldLiveBlack
     in
-        { newBoard
+        { evolvedBoard
             | cells =
                 (Dict.filter
-                    (\idx cell -> cell.state == Alive || cell.aliveNeighbours > 0)
-                    newBoard.cells
+                    (\idx cell -> (isAlive cell) || (totalNeighbors cell) > 0)
+                    evolvedBoard.cells
                 )
         }
 
@@ -216,7 +385,7 @@ evolve board =
 glider : Board -> Board
 glider board =
     List.foldl
-        live
+        liveWhite
         board
         [ ( 9, 9 )
         , ( 10, 9 )
@@ -226,29 +395,41 @@ glider board =
         ]
 
 
+lwOffset : ( Int, Int ) -> Board -> Board
+lwOffset ( ox, oy ) board =
+    let
+        justL =
+            List.foldl
+                liveWhite
+                board
+                [ ( 0 + ox, 0 + oy )
+                , ( 0 + ox, 1 + oy )
+                , ( 1 + ox, 1 + oy )
+                , ( 2 + ox, 0 + oy )
+                , ( 3 + ox, 1 + oy )
+                , ( 4 + ox, 1 + oy )
+                , ( 4 + ox, 0 + oy )
+                , ( 0 + ox, -2 + oy )
+                , ( 2 + ox, -2 + oy )
+                , ( 4 + ox, -2 + oy )
+                ]
+
+        justLW =
+            List.foldl
+                liveBlack
+                justL
+                [ ( -2 + ox, 1 + oy )
+                , ( -3 + ox, 1 + oy )
+                , ( -3 + ox, 0 + oy )
+                , ( -3 + ox, -2 + oy )
+                ]
+    in
+        justLW
+
+
 lw : Board -> Board
-lw board =
-    List.foldl
-        live
-        board
-        (List.map
-            (\( lwX, lwY ) -> ( lwX, lwY ))
-            [ ( 0, 0 )
-            , ( 0, 1 )
-            , ( 1, 1 )
-            , ( 2, 0 )
-            , ( 3, 1 )
-            , ( 4, 1 )
-            , ( 4, 0 )
-            , ( 0, -2 )
-            , ( 2, -2 )
-            , ( 4, -2 )
-            , ( -2, 1 )
-            , ( -3, 1 )
-            , ( -3, 0 )
-            , ( -3, -2 )
-            ]
-        )
+lw =
+    lwOffset ( 0, 0 )
 
 
 
@@ -363,59 +544,59 @@ cellStyle model idx =
         , style "left" "0"
         , style "position" "absolute"
         , style "transform" ("translate(" ++ (cellPosition model idx) ++ ")")
-        , white
         ]
 
 
-viewCell : Model -> Index -> Cell -> Html Msg
-viewCell model idx c =
-    case c.state of
-        Alive ->
-            viewAlive model idx c
+cellColor : Cell -> Attribute Msg
+cellColor c =
+    case c of
+        White _ ->
+            white
 
-        Dead ->
-            viewDead model idx c
+        Black _ ->
+            black
+
+        Dead _ ->
+            grey
 
 
 viewAlive : Model -> Index -> Cell -> Html Msg
 viewAlive model idx c =
-    div (cellStyle model idx)
+    div ((cellColor c) :: (cellStyle model idx))
         [ text "" ]
+
+
+deadDisplay : Attribute Msg
+deadDisplay =
+    case shouldDebug of
+        True ->
+            style "display" "block"
+
+        False ->
+            style "display" "none"
 
 
 viewDead : Model -> Index -> Cell -> Html Msg
 viewDead model idx c =
-    div (cellStyle model idx)
-        [ text
-            (case c.aliveNeighbours > 0 of
-                True ->
-                    case shouldDebug of
-                        True ->
-                            String.fromInt c.aliveNeighbours
-
-                        False ->
-                            " "
-
-                False ->
-                    " "
-            )
-        ]
+    div (deadDisplay :: (cellColor c) :: whiteFont :: (cellStyle model idx))
+        [ text (String.fromInt (totalNeighbors c)) ]
 
 
 viewBoard : Model -> List (Html Msg)
 viewBoard model =
     List.map
         (\( idx, cell ) ->
-            viewCell model idx cell
+            case cell of
+                White _ ->
+                    viewAlive model idx cell
+
+                Black _ ->
+                    viewAlive model idx cell
+
+                Dead _ ->
+                    viewDead model idx cell
         )
-        (Dict.toList
-            (Dict.filter
-                (\idx cell ->
-                    cell.state == Alive
-                )
-                model.board.cells
-            )
-        )
+        (Dict.toList model.board.cells)
 
 
 view : Model -> Browser.Document Msg
