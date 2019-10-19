@@ -14,25 +14,6 @@ import String
 import Debug
 
 
----- Utils ----
-
-
-wrap : Int -> Int -> Int
-wrap max val =
-    case val < 0 of
-        True ->
-            val + max
-
-        False ->
-            case val >= max of
-                True ->
-                    val - max
-
-                False ->
-                    val
-
-
-
 ---- Base Types ----
 
 
@@ -48,6 +29,30 @@ type alias Session =
     { key : Nav.Key
     , size : Size
     }
+
+
+
+---- Utils ----
+
+
+wrap : Int -> Int -> Int
+wrap max val =
+    case val < 0 of
+        True ->
+            wrap max (val + max)
+
+        False ->
+            case val >= max of
+                True ->
+                    wrap max (val - max)
+
+                False ->
+                    val
+
+
+shouldDebug : Bool
+shouldDebug =
+    False
 
 
 
@@ -68,32 +73,46 @@ type alias CellCtor =
     Neighbours -> Cell
 
 
-neighbourCount : (Neighbours -> Int) -> Cell -> Int
-neighbourCount getCount cell =
+mapNeighbour : (Neighbours -> a) -> Cell -> a
+mapNeighbour m cell =
     case cell of
         White n ->
-            getCount n
+            m n
 
         Black n ->
-            getCount n
+            m n
 
         Dead n ->
-            getCount n
+            m n
 
 
 totalNeighbors : Cell -> Int
 totalNeighbors =
-    neighbourCount (\n -> n.white + n.black)
+    mapNeighbour (\n -> n.white + n.black)
 
 
 blackNeighbours : Cell -> Int
 blackNeighbours =
-    neighbourCount .black
+    mapNeighbour .black
 
 
 whiteNeighbours : Cell -> Int
 whiteNeighbours =
-    neighbourCount .white
+    mapNeighbour .white
+
+
+defaultNeighbours : Neighbours
+defaultNeighbours =
+    { white = 0, black = 0 }
+
+
+defaultCell : Cell
+defaultCell =
+    Dead defaultNeighbours
+
+
+
+---- Board ----
 
 
 type alias Index =
@@ -108,31 +127,6 @@ type alias Board =
     { size : Int, cells : Cells }
 
 
-blue : Attribute Msg
-blue =
-    style "background-color" "rgb(0, 127, 177)"
-
-
-white : Attribute Msg
-white =
-    style "background-color" "rgb(255, 255, 255)"
-
-
-black : Attribute Msg
-black =
-    style "background-color" "rgb(0, 0, 0)"
-
-
-grey : Attribute Msg
-grey =
-    style "background-color" "rgb(128, 128, 128)"
-
-
-whiteFont : Attribute Msg
-whiteFont =
-    style "color" "rgb(255, 255, 255)"
-
-
 x : Index -> Int
 x idx =
     Tuple.first idx
@@ -143,19 +137,11 @@ y idx =
     Tuple.second idx
 
 
-shouldDebug : Bool
-shouldDebug =
-    False
-
-
-defaultNeighbours : Neighbours
-defaultNeighbours =
-    { white = 0, black = 0 }
-
-
-defaultCell : Cell
-defaultCell =
-    Dead defaultNeighbours
+getBoardCell : Index -> Board -> Cell
+getBoardCell idx board =
+    Maybe.withDefault
+        defaultCell
+        (Dict.get idx board.cells)
 
 
 neighbourOffsets : List Index
@@ -184,9 +170,7 @@ updateNeighbour : ( Int, Int ) -> Index -> Board -> Board
 updateNeighbour i idx board =
     let
         c =
-            Maybe.withDefault
-                defaultCell
-                (Dict.get idx board.cells)
+            getBoardCell idx board
     in
         { board
             | cells =
@@ -197,17 +181,22 @@ updateNeighbour i idx board =
         }
 
 
+addToNeighbour : ( Int, Int ) -> Neighbours -> Neighbours
+addToNeighbour ( w, b ) n =
+    { white = n.white + w, black = n.black + b }
+
+
 modifyNeighbourCount : ( Int, Int ) -> Cell -> Cell
-modifyNeighbourCount ( w, b ) c =
+modifyNeighbourCount i c =
     case c of
         White n ->
-            White { white = n.white + w, black = n.black + b }
+            White (addToNeighbour i n)
 
         Black n ->
-            Black { white = n.white + w, black = n.black + b }
+            Black (addToNeighbour i n)
 
         Dead n ->
-            Dead { white = n.white + w, black = n.black + b }
+            Dead (addToNeighbour i n)
 
 
 modifyCellType : CellCtor -> Cell -> Cell
@@ -227,9 +216,7 @@ changeCell : CellCtor -> ( Int, Int ) -> Index -> Board -> Board
 changeCell newType i idx board =
     let
         c =
-            Maybe.withDefault
-                defaultCell
-                (Dict.get idx board.cells)
+            getBoardCell idx board
 
         updatedNeighbours =
             (List.foldl
@@ -237,23 +224,26 @@ changeCell newType i idx board =
                 board
                 (neighbours idx board)
             )
+
+        newBoard =
+            { updatedNeighbours
+                | cells =
+                    Dict.insert
+                        idx
+                        (modifyCellType newType c)
+                        updatedNeighbours.cells
+            }
     in
-        { updatedNeighbours
-            | cells =
-                Dict.insert
-                    idx
-                    (modifyCellType newType c)
-                    updatedNeighbours.cells
-        }
+        newBoard
 
 
-liveWhite : Index -> Board -> Board
-liveWhite =
+spawnWhite : Index -> Board -> Board
+spawnWhite =
     changeCell White ( 1, 0 )
 
 
-liveBlack : Index -> Board -> Board
-liveBlack =
+spawnBlack : Index -> Board -> Board
+spawnBlack =
     changeCell Black ( 0, 1 )
 
 
@@ -261,9 +251,7 @@ die : Index -> Board -> Board
 die idx board =
     let
         c =
-            Maybe.withDefault
-                defaultCell
-                (Dict.get idx board.cells)
+            getBoardCell idx board
 
         modifiers =
             case c of
@@ -276,53 +264,56 @@ die idx board =
         changeCell Dead modifiers idx board
 
 
+toIndices : Cells -> List Index
+toIndices cells =
+    List.map
+        Tuple.first
+    <|
+        Dict.toList
+            cells
+
+
 indicesThatShouldDie : Board -> List Index
 indicesThatShouldDie board =
-    List.map
-        Tuple.first
-        (Dict.toList
-            (Dict.filter
-                (\idx cell ->
-                    let
-                        n =
-                            totalNeighbors cell
-                    in
-                        (n < 2 || n > 3)
-                )
-                (aliveCells board.cells)
+    toIndices
+        (Dict.filter
+            (\idx cell ->
+                let
+                    n =
+                        totalNeighbors cell
+                in
+                    (n < 2 || n > 3)
             )
+            (aliveCells board.cells)
         )
 
 
-indicesThatShouldBeColor : Board -> (Int -> Int -> Bool) -> List Index
-indicesThatShouldBeColor board colorMatch =
-    List.map
-        Tuple.first
-        (Dict.toList
-            (Dict.filter
-                (\idx cell ->
-                    let
-                        blackN =
-                            blackNeighbours cell
+indicesThatSpawnColor : Board -> (Int -> Int -> Bool) -> List Index
+indicesThatSpawnColor board colorMatch =
+    toIndices
+        (Dict.filter
+            (\idx cell ->
+                let
+                    blackN =
+                        blackNeighbours cell
 
-                        whiteN =
-                            whiteNeighbours cell
-                    in
-                        (blackN + whiteN) == 3 && (colorMatch whiteN blackN)
-                )
-                (deadCells board.cells)
+                    whiteN =
+                        whiteNeighbours cell
+                in
+                    (blackN + whiteN) == 3 && (colorMatch whiteN blackN)
             )
+            (deadCells board.cells)
         )
 
 
-indicesThatShouldLiveWhite : Board -> List Index
-indicesThatShouldLiveWhite board =
-    indicesThatShouldBeColor board (\w b -> w < 2)
+indicesThatSpawnWhite : Board -> List Index
+indicesThatSpawnWhite board =
+    indicesThatSpawnColor board (\w b -> w < 2)
 
 
-indicesThatShouldLiveBlack : Board -> List Index
-indicesThatShouldLiveBlack board =
-    indicesThatShouldBeColor board (\w b -> b < 2)
+indicesThatSpawnBlack : Board -> List Index
+indicesThatSpawnBlack board =
+    indicesThatSpawnColor board (\w b -> b < 2)
 
 
 isAlive : Cell -> Bool
@@ -359,19 +350,19 @@ evolve board =
             indicesThatShouldDie board
 
         shouldLiveBlack =
-            indicesThatShouldLiveBlack board
+            indicesThatSpawnBlack board
 
         shouldLiveWhite =
-            indicesThatShouldLiveWhite board
+            indicesThatSpawnWhite board
 
         clearedDead =
             List.foldl die board shouldDie
 
         newWhite =
-            List.foldl liveWhite clearedDead shouldLiveWhite
+            List.foldl spawnWhite clearedDead shouldLiveWhite
 
         evolvedBoard =
-            List.foldl liveBlack newWhite shouldLiveBlack
+            List.foldl spawnBlack newWhite shouldLiveBlack
     in
         { evolvedBoard
             | cells =
@@ -385,7 +376,7 @@ evolve board =
 glider : Board -> Board
 glider board =
     List.foldl
-        liveWhite
+        spawnWhite
         board
         [ ( 9, 9 )
         , ( 10, 9 )
@@ -400,7 +391,7 @@ lwOffset ( ox, oy ) board =
     let
         justL =
             List.foldl
-                liveWhite
+                spawnWhite
                 board
                 [ ( 0 + ox, 0 + oy )
                 , ( 0 + ox, 1 + oy )
@@ -416,7 +407,7 @@ lwOffset ( ox, oy ) board =
 
         justLW =
             List.foldl
-                liveBlack
+                spawnBlack
                 justL
                 [ ( -2 + ox, 1 + oy )
                 , ( -3 + ox, 1 + oy )
@@ -498,6 +489,31 @@ update msg model =
 ---- VIEW ----
 
 
+blue : Attribute Msg
+blue =
+    style "background-color" "rgb(0, 127, 177)"
+
+
+white : Attribute Msg
+white =
+    style "background-color" "rgb(255, 255, 255)"
+
+
+black : Attribute Msg
+black =
+    style "background-color" "rgb(0, 0, 0)"
+
+
+grey : Attribute Msg
+grey =
+    style "background-color" "rgb(128, 128, 128)"
+
+
+whiteFont : Attribute Msg
+whiteFont =
+    style "color" "rgb(255, 255, 255)"
+
+
 minSize : Model -> Int
 minSize model =
     let
@@ -512,9 +528,13 @@ cellSize model =
     (minSize model) // (model.board.size)
 
 
-translate : Model -> Int -> Int -> String
-translate model idx offset =
-    (String.fromInt (((cellSize model) * idx) + offset)) ++ "px"
+translate : Model -> Int -> Int -> Int -> String
+translate model idx offset wrapSize =
+    let
+        val =
+            wrap wrapSize (((cellSize model) * idx) + offset)
+    in
+        (String.fromInt val) ++ "px"
 
 
 cellPosition : Model -> Index -> String
@@ -529,7 +549,9 @@ cellPosition model idx =
         yOffset =
             size.height // 2
     in
-        (translate model (Tuple.first idx) xOffset) ++ ", " ++ (translate model (Tuple.second idx) yOffset)
+        (translate model (Tuple.first idx) xOffset size.width)
+            ++ ", "
+            ++ (translate model (Tuple.second idx) yOffset size.height)
 
 
 cellStyle : Model -> Index -> List (Attribute Msg)
@@ -617,7 +639,7 @@ view model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Time.every 1000 Tick
+    Time.every 500 Tick
 
 
 
