@@ -639,7 +639,7 @@ view model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Time.every 500 Tick
+    Time.every 100 Tick
 
 
 
