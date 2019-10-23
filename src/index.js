@@ -1,10 +1,9 @@
-import { Elm } from './Main.elm';
+import { Elm } from "./Main.elm";
 
 Elm.Main.init({
-    node: document.getElementById('root'),
-    flags: {
-        width: window.innerWidth,
-        height: window.innerHeight,
-        csrfToken: "{{ csrf_token }}"
-    }
+  node: document.getElementById("root"),
+  flags: {
+    width: window.innerWidth,
+    height: window.innerHeight
+  }
 });

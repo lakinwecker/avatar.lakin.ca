@@ -1,9 +1,12 @@
 module Main exposing (..)
 
+import Animation
 import Browser
 import Browser.Navigation as Nav
+import Browser.Events as Events
 import Html exposing (Html, Attribute, div, text)
-import Html.Attributes exposing (style)
+import Html.Keyed as Keyed
+import Html.Attributes exposing (style, attribute)
 import Dict
 import Maybe
 import List
@@ -59,27 +62,35 @@ shouldDebug =
 ---- Cell ----
 
 
-type alias Neighbours =
+type alias NeighbourCounts =
     { white : Int, black : Int }
 
 
 type Cell
-    = White Neighbours
-    | Black Neighbours
-    | Dead Neighbours
+    = White NeighbourCounts
+    | Black NeighbourCounts
+    | DyingWhite NeighbourCounts
+    | DyingBlack NeighbourCounts
+    | Dead NeighbourCounts
 
 
-type alias CellCtor =
-    Neighbours -> Cell
+type alias CellConstructor =
+    NeighbourCounts -> Cell
 
 
-mapNeighbour : (Neighbours -> a) -> Cell -> a
+mapNeighbour : (NeighbourCounts -> a) -> Cell -> a
 mapNeighbour m cell =
     case cell of
         White n ->
             m n
 
         Black n ->
+            m n
+
+        DyingWhite n ->
+            m n
+
+        DyingBlack n ->
             m n
 
         Dead n ->
@@ -101,7 +112,7 @@ whiteNeighbours =
     mapNeighbour .white
 
 
-defaultNeighbours : Neighbours
+defaultNeighbours : NeighbourCounts
 defaultNeighbours =
     { white = 0, black = 0 }
 
@@ -181,7 +192,7 @@ updateNeighbour i idx board =
         }
 
 
-addToNeighbour : ( Int, Int ) -> Neighbours -> Neighbours
+addToNeighbour : ( Int, Int ) -> NeighbourCounts -> NeighbourCounts
 addToNeighbour ( w, b ) n =
     { white = n.white + w, black = n.black + b }
 
@@ -195,11 +206,17 @@ modifyNeighbourCount i c =
         Black n ->
             Black (addToNeighbour i n)
 
+        DyingWhite n ->
+            DyingWhite (addToNeighbour i n)
+
+        DyingBlack n ->
+            DyingBlack (addToNeighbour i n)
+
         Dead n ->
             Dead (addToNeighbour i n)
 
 
-modifyCellType : CellCtor -> Cell -> Cell
+modifyCellType : CellConstructor -> Cell -> Cell
 modifyCellType new c =
     case c of
         White n ->
@@ -208,11 +225,17 @@ modifyCellType new c =
         Black n ->
             new n
 
+        DyingWhite n ->
+            new n
+
+        DyingBlack n ->
+            new n
+
         Dead n ->
             new n
 
 
-changeCell : CellCtor -> ( Int, Int ) -> Index -> Board -> Board
+changeCell : CellConstructor -> ( Int, Int ) -> Index -> Board -> Board
 changeCell newType i idx board =
     let
         c =
@@ -253,15 +276,18 @@ die idx board =
         c =
             getBoardCell idx board
 
-        modifiers =
+        ( modifiers, newState ) =
             case c of
                 White _ ->
-                    ( -1, 0 )
+                    ( ( -1, 0 ), DyingWhite )
+
+                Black _ ->
+                    ( ( 0, -1 ), DyingBlack )
 
                 _ ->
-                    ( 0, -1 )
+                    ( ( 0, 0 ), Dead )
     in
-        changeCell Dead modifiers idx board
+        changeCell newState modifiers idx board
 
 
 toIndices : Cells -> List Index
@@ -282,9 +308,9 @@ indicesThatShouldDie board =
                     n =
                         totalNeighbors cell
                 in
-                    (n < 2 || n > 3)
+                    (isAlive cell && (n < 2 || n > 3)) || (isDying cell)
             )
-            (aliveCells board.cells)
+            board.cells
         )
 
 
@@ -300,9 +326,9 @@ indicesThatSpawnColor board colorMatch =
                     whiteN =
                         whiteNeighbours cell
                 in
-                    (blackN + whiteN) == 3 && (colorMatch whiteN blackN)
+                    (not (isAlive cell)) && (blackN + whiteN) == 3 && (colorMatch whiteN blackN)
             )
-            (deadCells board.cells)
+            board.cells
         )
 
 
@@ -325,49 +351,49 @@ isAlive c =
         Black _ ->
             True
 
-        Dead _ ->
+        _ ->
             False
 
 
-deadCells : Cells -> Cells
-deadCells cells =
-    Dict.filter
-        (\idx c -> not (isAlive c))
-        cells
+isDying : Cell -> Bool
+isDying c =
+    case c of
+        DyingWhite _ ->
+            True
+
+        DyingBlack _ ->
+            True
+
+        _ ->
+            False
 
 
-aliveCells : Cells -> Cells
-aliveCells cells =
-    Dict.filter
-        (\idx c -> isAlive c)
-        cells
+isDead : Cell -> Bool
+isDead c =
+    case c of
+        Dead _ ->
+            True
+
+        _ ->
+            False
 
 
 evolve : Board -> Board
 evolve board =
     let
-        shouldDie =
-            indicesThatShouldDie board
-
-        shouldLiveBlack =
-            indicesThatSpawnBlack board
-
-        shouldLiveWhite =
-            indicesThatSpawnWhite board
-
         clearedDead =
-            List.foldl die board shouldDie
+            List.foldl die board (indicesThatShouldDie board)
 
         newWhite =
-            List.foldl spawnWhite clearedDead shouldLiveWhite
+            List.foldl spawnWhite clearedDead (indicesThatSpawnWhite board)
 
         evolvedBoard =
-            List.foldl spawnBlack newWhite shouldLiveBlack
+            List.foldl spawnBlack newWhite (indicesThatSpawnBlack board)
     in
         { evolvedBoard
             | cells =
                 (Dict.filter
-                    (\idx cell -> (isAlive cell) || (totalNeighbors cell) > 0)
+                    (\idx cell -> (not (isDead cell)) || (totalNeighbors cell) > 0)
                     evolvedBoard.cells
                 )
         }
@@ -386,34 +412,57 @@ glider board =
         ]
 
 
+avatarL : List ( Int, Int )
+avatarL =
+    [ ( -3, -2 )
+    , ( -3, 0 )
+    , ( -3, 1 )
+    , ( -2, 1 )
+    ]
+
+
+avatarW : List ( Int, Int )
+avatarW =
+    [ ( 0, -2 )
+    , ( 0, 0 )
+    , ( 0, 1 )
+    , ( 1, 1 )
+    , ( 2, -2 )
+    , ( 2, 0 )
+    , ( 3, 1 )
+    , ( 4, -2 )
+    , ( 4, 1 )
+    , ( 4, 0 )
+    ]
+
+
+offsetCoords : ( Int, Int ) -> List ( Int, Int ) -> List ( Int, Int )
+offsetCoords o =
+    let
+        f =
+            Tuple.first
+
+        s =
+            Tuple.second
+    in
+        List.map
+            (\v -> ( (f v) + (f o), (s v) + (s o) ))
+
+
 lwOffset : ( Int, Int ) -> Board -> Board
-lwOffset ( ox, oy ) board =
+lwOffset o board =
     let
         justL =
             List.foldl
                 spawnWhite
                 board
-                [ ( 0 + ox, 0 + oy )
-                , ( 0 + ox, 1 + oy )
-                , ( 1 + ox, 1 + oy )
-                , ( 2 + ox, 0 + oy )
-                , ( 3 + ox, 1 + oy )
-                , ( 4 + ox, 1 + oy )
-                , ( 4 + ox, 0 + oy )
-                , ( 0 + ox, -2 + oy )
-                , ( 2 + ox, -2 + oy )
-                , ( 4 + ox, -2 + oy )
-                ]
+                (offsetCoords o avatarW)
 
         justLW =
             List.foldl
                 spawnBlack
                 justL
-                [ ( -2 + ox, 1 + oy )
-                , ( -3 + ox, 1 + oy )
-                , ( -3 + ox, 0 + oy )
-                , ( -3 + ox, -2 + oy )
-                ]
+                (offsetCoords o avatarL)
     in
         justLW
 
@@ -427,21 +476,34 @@ lw =
 ---- MODEL ----
 
 
+type AnimationState
+    = BuildingL
+    | BuildingW
+    | Pause
+    | Going
+
+
 type alias Model =
     { board : Board
+    , l : List ( Int, Int )
+    , w : List ( Int, Int )
     , session : Session
     , generations : Int
+    , state : AnimationState
     }
 
 
 init : Flags -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url key =
-    ( { board = lw ({ size = 32, cells = Dict.empty })
+    ( { board = { size = 32, cells = Dict.empty }
+      , l = avatarL
+      , w = avatarW
       , session =
             Session
                 key
                 { width = flags.width, height = flags.height }
       , generations = 0
+      , state = BuildingL
       }
     , Cmd.none
     )
@@ -449,6 +511,32 @@ init flags url key =
 
 
 ---- UPDATE ----
+
+
+updateL : Model -> Model
+updateL model =
+    case model.l of
+        first :: [] ->
+            { model | l = [], board = (spawnBlack first model.board), state = BuildingW }
+
+        first :: rest ->
+            { model | l = rest, board = (spawnBlack first model.board) }
+
+        [] ->
+            { model | l = [], state = BuildingW }
+
+
+updateW : Model -> Model
+updateW model =
+    case model.w of
+        first :: [] ->
+            { model | w = [], board = (spawnWhite first model.board), state = Pause }
+
+        first :: rest ->
+            { model | w = rest, board = (spawnWhite first model.board) }
+
+        [] ->
+            { model | w = [], state = Pause }
 
 
 type Msg
@@ -462,11 +550,22 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Tick t ->
-            let
-                newBoard =
-                    evolve model.board
-            in
-                ( { model | board = newBoard, generations = model.generations + 1 }, Cmd.none )
+            case model.state of
+                BuildingL ->
+                    ( updateL model, Cmd.none )
+
+                BuildingW ->
+                    ( updateW model, Cmd.none )
+
+                Pause ->
+                    ( { model | state = Going }, Cmd.none )
+
+                Going ->
+                    let
+                        newBoard =
+                            evolve model.board
+                    in
+                        ( { model | board = newBoard, generations = model.generations + 1 }, Cmd.none )
 
         BrowserResize w h ->
             let
@@ -489,28 +588,38 @@ update msg model =
 ---- VIEW ----
 
 
-blue : Attribute Msg
-blue =
+blueBG : Attribute Msg
+blueBG =
     style "background-color" "rgb(0, 127, 177)"
 
 
-white : Attribute Msg
-white =
+whiteBG : Attribute Msg
+whiteBG =
     style "background-color" "rgb(255, 255, 255)"
 
 
-black : Attribute Msg
-black =
+blackBG : Attribute Msg
+blackBG =
     style "background-color" "rgb(0, 0, 0)"
 
 
-grey : Attribute Msg
-grey =
+greyBG : Attribute Msg
+greyBG =
     style "background-color" "rgb(128, 128, 128)"
 
 
-whiteFont : Attribute Msg
-whiteFont =
+lightGreyBG : Attribute Msg
+lightGreyBG =
+    style "background-color" "rgb(200, 200, 200)"
+
+
+whiteFG : Attribute Msg
+whiteFG =
+    style "color" "rgb(255, 255, 255)"
+
+
+blackFG : Attribute Msg
+blackFG =
     style "color" "rgb(255, 255, 255)"
 
 
@@ -537,8 +646,8 @@ translate model idx offset wrapSize =
         (String.fromInt val) ++ "px"
 
 
-cellPosition : Model -> Index -> String
-cellPosition model idx =
+cellTranslate : Model -> Index -> String
+cellTranslate model idx =
     let
         size =
             model.session.size
@@ -554,38 +663,80 @@ cellPosition model idx =
             ++ (translate model (Tuple.second idx) yOffset size.height)
 
 
-cellStyle : Model -> Index -> List (Attribute Msg)
-cellStyle model idx =
+cellPosition : Model -> Cell -> Index -> List (Attribute Msg)
+cellPosition model cell idx =
+    [ style "top" "0"
+    , style "left" "0"
+    , style "position" "absolute"
+    , style "transform" ("translate(" ++ (cellTranslate model idx) ++ ")")
+    ]
+
+
+cellSizeStyle : Model -> Cell -> Index -> List (Attribute Msg)
+cellSizeStyle model cell idx =
     let
         size =
             cellSize model
+
+        sizepx =
+            (String.fromInt size) ++ "px"
     in
-        [ style "height" ((String.fromInt size) ++ "px")
-        , style "width" ((String.fromInt size) ++ "px")
-        , style "top" "0"
-        , style "left" "0"
-        , style "position" "absolute"
-        , style "transform" ("translate(" ++ (cellPosition model idx) ++ ")")
+        [ style "height" sizepx
+        , style "width" sizepx
         ]
 
 
-cellColor : Cell -> Attribute Msg
-cellColor c =
+cellBG : Cell -> Attribute Msg
+cellBG c =
     case c of
         White _ ->
-            white
+            whiteBG
 
         Black _ ->
-            black
+            blackBG
+
+        DyingWhite _ ->
+            whiteBG
+
+        DyingBlack _ ->
+            blackBG
 
         Dead _ ->
-            grey
+            greyBG
+
+
+cellFG : Cell -> Attribute Msg
+cellFG c =
+    case c of
+        Black _ ->
+            whiteFG
+
+        _ ->
+            blackFG
+
+
+aliveClass : Cell -> Attribute Msg
+aliveClass cell =
+    attribute "class"
+        (case cell of
+            DyingBlack _ ->
+                "dying"
+
+            DyingWhite _ ->
+                "dying"
+
+            Dead _ ->
+                "dead"
+
+            _ ->
+                "alive"
+        )
 
 
 viewAlive : Model -> Index -> Cell -> Html Msg
 viewAlive model idx c =
-    div ((cellColor c) :: (cellStyle model idx))
-        [ text "" ]
+    div (cellPosition model c idx)
+        [ div ((aliveClass c) :: (cellBG c) :: (cellSizeStyle model c idx)) [ text "" ] ]
 
 
 deadDisplay : Attribute Msg
@@ -600,23 +751,25 @@ deadDisplay =
 
 viewDead : Model -> Index -> Cell -> Html Msg
 viewDead model idx c =
-    div (deadDisplay :: (cellColor c) :: whiteFont :: (cellStyle model idx))
+    div (deadDisplay :: (List.concat [ cellPosition model c idx, cellSizeStyle model c idx ]))
         [ text (String.fromInt (totalNeighbors c)) ]
 
 
-viewBoard : Model -> List (Html Msg)
+cellKey : Index -> String.String
+cellKey ( i, j ) =
+    String.fromInt i ++ String.fromInt j
+
+
+viewBoard : Model -> List ( String.String, Html Msg )
 viewBoard model =
     List.map
         (\( idx, cell ) ->
             case cell of
-                White _ ->
-                    viewAlive model idx cell
-
-                Black _ ->
-                    viewAlive model idx cell
-
                 Dead _ ->
-                    viewDead model idx cell
+                    ( cellKey idx, viewDead model idx cell )
+
+                _ ->
+                    ( cellKey idx, viewAlive model idx cell )
         )
         (Dict.toList model.board.cells)
 
@@ -625,12 +778,12 @@ view : Model -> Browser.Document Msg
 view model =
     { title = "Lakin Wecker's Avatar"
     , body =
-        [ div
+        [ Keyed.node "div"
             [ style "position" "relative"
             , style "display" "block"
             , style "height" "100%"
             , style "width" "100%"
-            , blue
+            , blueBG
             ]
             (viewBoard model)
         ]
@@ -639,7 +792,18 @@ view model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Time.every 100 Tick
+    Sub.batch
+        [ Events.onResize BrowserResize
+        , case model.state of
+            Going ->
+                Time.every 1000 Tick
+
+            Pause ->
+                Time.every 1500 Tick
+
+            _ ->
+                Time.every 30 Tick
+        ]
 
 
 
