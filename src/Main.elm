@@ -1,6 +1,5 @@
 module Main exposing (..)
 
-import Animation
 import Browser
 import Browser.Navigation as Nav
 import Browser.Events as Events
@@ -21,17 +20,16 @@ import Debug
 ---- Base Types ----
 
 
-type alias Flags =
-    { width : Int, height : Int }
-
-
 type alias Size =
     { width : Int, height : Int }
 
 
+type alias Flags =
+    Size
+
+
 type alias Session =
-    { key : Nav.Key
-    , size : Size
+    { size : Size
     }
 
 
@@ -57,6 +55,11 @@ wrap max val =
 shouldDebug : Bool
 shouldDebug =
     False
+
+
+boardSize : Int
+boardSize =
+    32
 
 
 
@@ -97,16 +100,6 @@ totalNeighbors =
     mapNeighbour (\n -> n.white + n.black)
 
 
-blackNeighbours : Cell -> Int
-blackNeighbours =
-    mapNeighbour .black
-
-
-whiteNeighbours : Cell -> Int
-whiteNeighbours =
-    mapNeighbour .white
-
-
 defaultNeighbours : NeighbourCounts
 defaultNeighbours =
     { white = 0, black = 0 }
@@ -118,7 +111,7 @@ defaultCell =
 
 
 
----- Board ----
+---- Cells ----
 
 
 type alias Index =
@@ -127,10 +120,6 @@ type alias Index =
 
 type alias Cells =
     Dict.Dict Index Cell
-
-
-type alias Board =
-    { size : Int, cells : Cells }
 
 
 x : Index -> Int
@@ -143,11 +132,11 @@ y idx =
     Tuple.second idx
 
 
-getBoardCell : Index -> Board -> Cell
+getBoardCell : Index -> Cells -> Cell
 getBoardCell idx board =
     Maybe.withDefault
         defaultCell
-        (Dict.get idx board.cells)
+        (Dict.get idx board)
 
 
 neighbourOffsets : List Index
@@ -163,8 +152,8 @@ neighbourOffsets =
     ]
 
 
-neighbours : Index -> Board -> List Index
-neighbours idx board =
+neighbours : Index -> List Index
+neighbours idx =
     List.map
         (\offset ->
             ( (x idx) + (x offset), (y idx) + (y offset) )
@@ -172,24 +161,12 @@ neighbours idx board =
         neighbourOffsets
 
 
-updateNeighbour : ( Int, Int ) -> Index -> Board -> Board
+updateNeighbour : ( Int, Int ) -> Index -> Cells -> Cells
 updateNeighbour i idx board =
-    let
-        c =
-            getBoardCell idx board
-    in
-        { board
-            | cells =
-                Dict.insert
-                    idx
-                    (modifyNeighbourCount i c)
-                    board.cells
-        }
-
-
-addToNeighbour : ( Int, Int ) -> NeighbourCounts -> NeighbourCounts
-addToNeighbour ( w, b ) n =
-    { white = n.white + w, black = n.black + b }
+    Dict.insert
+        idx
+        (modifyNeighbourCount i <| getBoardCell idx board)
+        board
 
 
 modifyNeighbourCount : ( Int, Int ) -> Cell -> Cell
@@ -206,42 +183,36 @@ modifyCellType color state c =
     { c | state = state, color = color }
 
 
-changeCell : Color -> State -> ( Int, Int ) -> Index -> Board -> Board
+changeCell : Color -> State -> ( Int, Int ) -> Index -> Cells -> Cells
 changeCell color state i idx board =
     let
-        c =
-            getBoardCell idx board
-
         updatedNeighbours =
             (List.foldl
                 (updateNeighbour i)
                 board
-                (neighbours idx board)
+                (neighbours idx)
             )
 
         newBoard =
-            { updatedNeighbours
-                | cells =
-                    Dict.insert
-                        idx
-                        (modifyCellType color state c)
-                        updatedNeighbours.cells
-            }
+            Dict.insert
+                idx
+                (modifyCellType color state <| getBoardCell idx board)
+                updatedNeighbours
     in
         newBoard
 
 
-spawnWhite : Index -> Board -> Board
+spawnWhite : Index -> Cells -> Cells
 spawnWhite =
     changeCell White Spawning ( 1, 0 )
 
 
-spawnBlack : Index -> Board -> Board
+spawnBlack : Index -> Cells -> Cells
 spawnBlack =
     changeCell Black Spawning ( 0, 1 )
 
 
-spawnToAlive : Index -> Board -> Board
+spawnToAlive : Index -> Cells -> Cells
 spawnToAlive idx board =
     let
         c =
@@ -250,7 +221,7 @@ spawnToAlive idx board =
         changeCell c.color Alive ( 0, 0 ) idx board
 
 
-die : Index -> Board -> Board
+die : Index -> Cells -> Cells
 die idx board =
     let
         c =
@@ -285,7 +256,7 @@ toIndices cells =
             cells
 
 
-indicesThatShouldDie : Board -> List Index
+indicesThatShouldDie : Cells -> List Index
 indicesThatShouldDie board =
     toIndices
         (Dict.filter
@@ -296,34 +267,34 @@ indicesThatShouldDie board =
                 in
                     (isAlive cell && (n < 2 || n > 3)) || (isDying cell)
             )
-            board.cells
+            board
         )
 
 
-indicesThatSpawnColor : Board -> (Int -> Int -> Bool) -> List Index
+indicesThatSpawnColor : Cells -> (Int -> Int -> Bool) -> List Index
 indicesThatSpawnColor board colorMatch =
     toIndices
         (Dict.filter
             (\idx cell ->
                 let
                     blackN =
-                        blackNeighbours cell
+                        mapNeighbour .black cell
 
                     whiteN =
-                        whiteNeighbours cell
+                        mapNeighbour .white cell
                 in
                     (not (isAlive cell)) && (blackN + whiteN) == 3 && (colorMatch whiteN blackN)
             )
-            board.cells
+            board
         )
 
 
-indicesThatSpawnWhite : Board -> List Index
+indicesThatSpawnWhite : Cells -> List Index
 indicesThatSpawnWhite board =
     indicesThatSpawnColor board (\w b -> w < 2)
 
 
-indicesThatSpawnBlack : Board -> List Index
+indicesThatSpawnBlack : Cells -> List Index
 indicesThatSpawnBlack board =
     indicesThatSpawnColor board (\w b -> b < 2)
 
@@ -371,7 +342,7 @@ isDead c =
             False
 
 
-evolve : Board -> Board
+evolve : Cells -> Cells
 evolve board =
     let
         clearedDead =
@@ -384,7 +355,7 @@ evolve board =
                 (List.map
                     (\( idx, _ ) -> idx)
                     (Dict.toList
-                        (Dict.filter (\idx c -> isSpawning c) clearedDead.cells)
+                        (Dict.filter (\idx c -> isSpawning c) clearedDead)
                     )
                 )
 
@@ -394,16 +365,13 @@ evolve board =
         evolvedBoard =
             List.foldl spawnBlack newWhite (indicesThatSpawnBlack board)
     in
-        { evolvedBoard
-            | cells =
-                (Dict.filter
-                    (\idx cell -> (not (isDead cell)) || (totalNeighbors cell) > 0)
-                    evolvedBoard.cells
-                )
-        }
+        (Dict.filter
+            (\idx cell -> (not (isDead cell)) || (totalNeighbors cell) > 0)
+            evolvedBoard
+        )
 
 
-glider : Board -> Board
+glider : Cells -> Cells
 glider board =
     List.foldl
         spawnWhite
@@ -453,7 +421,7 @@ offsetCoords o =
             (\v -> ( (f v) + (f o), (s v) + (s o) ))
 
 
-lwOffset : ( Int, Int ) -> Board -> Board
+lwOffset : ( Int, Int ) -> Cells -> Cells
 lwOffset o board =
     let
         justL =
@@ -471,7 +439,7 @@ lwOffset o board =
         justLW
 
 
-lw : Board -> Board
+lw : Cells -> Cells
 lw =
     lwOffset ( 0, 0 )
 
@@ -488,25 +456,22 @@ type AnimationState
 
 
 type alias Model =
-    { board : Board
+    { board : Cells
     , l : List ( Int, Int )
     , w : List ( Int, Int )
     , session : Session
-    , generations : Int
     , state : AnimationState
     }
 
 
 init : Flags -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags url key =
-    ( { board = { size = 32, cells = Dict.empty }
+    ( { board = Dict.empty
       , l = avatarL
       , w = avatarW
       , session =
             Session
-                key
                 { width = flags.width, height = flags.height }
-      , generations = 0
       , state = BuildingL
       }
     , Cmd.none
@@ -569,7 +534,7 @@ update msg model =
                         newBoard =
                             evolve model.board
                     in
-                        ( { model | board = newBoard, generations = model.generations + 1 }, Cmd.none )
+                        ( { model | board = newBoard }, Cmd.none )
 
         BrowserResize w h ->
             let
@@ -627,63 +592,48 @@ blackFG =
     style "color" "rgb(255, 255, 255)"
 
 
-minSize : Model -> Int
-minSize model =
-    let
-        size =
-            model.session.size
-    in
-        min size.height size.width
+cellSize : Size -> Int
+cellSize size =
+    min size.height size.width // boardSize
 
 
-cellSize : Model -> Int
-cellSize model =
-    (minSize model) // (model.board.size)
-
-
-translate : Model -> Int -> Int -> Int -> String
-translate model idx offset wrapSize =
+translate : Size -> Int -> Int -> Int -> String
+translate size idx offset wrapSize =
     let
         val =
-            wrap wrapSize (((cellSize model) * idx) + offset)
+            wrap wrapSize (((cellSize size) * idx) + offset)
     in
         (String.fromInt val) ++ "px"
 
 
-cellTranslate : Model -> Index -> String
-cellTranslate model idx =
+cellTranslate : Size -> Index -> String
+cellTranslate size idx =
     let
-        size =
-            model.session.size
-
         xOffset =
             size.width // 2
 
         yOffset =
             size.height // 2
     in
-        (translate model (Tuple.first idx) xOffset size.width)
+        (translate size (Tuple.first idx) xOffset size.width)
             ++ ", "
-            ++ (translate model (Tuple.second idx) yOffset size.height)
+            ++ (translate size (Tuple.second idx) yOffset size.height)
 
 
-cellPosition : Model -> Cell -> Index -> List (Attribute Msg)
-cellPosition model cell idx =
+cellPosition : Size -> Cell -> Index -> List (Attribute Msg)
+cellPosition size cell idx =
     [ style "top" "0"
     , style "left" "0"
     , style "position" "absolute"
-    , style "transform" ("translate(" ++ (cellTranslate model idx) ++ ")")
+    , style "transform" ("translate(" ++ (cellTranslate size idx) ++ ")")
     ]
 
 
-cellSizeStyle : Model -> List (Attribute Msg)
-cellSizeStyle model =
+cellSizeStyle : Size -> List (Attribute Msg)
+cellSizeStyle size =
     let
-        size =
-            cellSize model
-
         sizepx =
-            (String.fromInt size) ++ "px"
+            (String.fromInt <| cellSize size) ++ "px"
     in
         [ style "height" sizepx
         , style "width" sizepx
@@ -728,10 +678,10 @@ aliveClass cell =
         )
 
 
-viewAlive : Model -> Index -> Cell -> Html Msg
-viewAlive model idx c =
-    div (cellPosition model c idx)
-        [ div ((aliveClass c) :: (cellBG c) :: (cellSizeStyle model)) [ text "" ] ]
+viewAlive : Size -> Index -> Cell -> Html Msg
+viewAlive size idx c =
+    div (cellPosition size c idx)
+        [ div ((aliveClass c) :: (cellBG c) :: (cellSizeStyle size)) [ text "" ] ]
 
 
 deadDisplay : Attribute Msg
@@ -744,9 +694,9 @@ deadDisplay =
             style "display" "none"
 
 
-viewDead : Model -> Index -> Cell -> Html Msg
-viewDead model idx c =
-    div (deadDisplay :: (List.concat [ cellPosition model c idx, cellSizeStyle model ]))
+viewDead : Size -> Index -> Cell -> Html Msg
+viewDead size idx c =
+    div (deadDisplay :: (List.concat [ cellPosition size c idx, cellSizeStyle size ]))
         [ text (String.fromInt (totalNeighbors c)) ]
 
 
@@ -767,13 +717,16 @@ viewBoard model =
 
                         _ ->
                             viewAlive
+
+                size =
+                    model.session.size
             in
-                ( cellKey idx, v model idx cell )
+                ( cellKey idx, Lazy.lazy3 v size idx cell )
         )
         (Dict.toList
             (case shouldDebug of
                 True ->
-                    model.board.cells
+                    model.board
 
                 False ->
                     Dict.filter
@@ -785,7 +738,7 @@ viewBoard model =
                                 _ ->
                                     True
                         )
-                        model.board.cells
+                        model.board
             )
         )
 
