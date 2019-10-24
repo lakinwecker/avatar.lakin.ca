@@ -1,3 +1,8 @@
+-- Copyright 2019 Lakin Wecker
+-- Licensed under the GPL v3.0
+-- See LICENSE for more information.
+
+
 module Main exposing (..)
 
 import Browser
