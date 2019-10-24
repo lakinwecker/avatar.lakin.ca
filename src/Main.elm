@@ -6,6 +6,7 @@ import Browser.Navigation as Nav
 import Browser.Events as Events
 import Html exposing (Html, Attribute, div, text)
 import Html.Keyed as Keyed
+import Html.Lazy as Lazy
 import Html.Attributes exposing (style, attribute)
 import Dict
 import Maybe
@@ -66,35 +67,29 @@ type alias NeighbourCounts =
     { white : Int, black : Int }
 
 
-type Cell
-    = White NeighbourCounts
-    | Black NeighbourCounts
-    | DyingWhite NeighbourCounts
-    | DyingBlack NeighbourCounts
-    | Dead NeighbourCounts
+type Color
+    = White
+    | Black
+
+
+type State
+    = Spawning
+    | Alive
+    | Dying
+    | Dead
+
+
+type alias Cell =
+    { state : State, color : Color, neighbours : NeighbourCounts }
 
 
 type alias CellConstructor =
-    NeighbourCounts -> Cell
+    State -> Color -> NeighbourCounts -> Cell
 
 
 mapNeighbour : (NeighbourCounts -> a) -> Cell -> a
 mapNeighbour m cell =
-    case cell of
-        White n ->
-            m n
-
-        Black n ->
-            m n
-
-        DyingWhite n ->
-            m n
-
-        DyingBlack n ->
-            m n
-
-        Dead n ->
-            m n
+    m cell.neighbours
 
 
 totalNeighbors : Cell -> Int
@@ -119,7 +114,7 @@ defaultNeighbours =
 
 defaultCell : Cell
 defaultCell =
-    Dead defaultNeighbours
+    { state = Dead, color = White, neighbours = defaultNeighbours }
 
 
 
@@ -198,45 +193,21 @@ addToNeighbour ( w, b ) n =
 
 
 modifyNeighbourCount : ( Int, Int ) -> Cell -> Cell
-modifyNeighbourCount i c =
-    case c of
-        White n ->
-            White (addToNeighbour i n)
-
-        Black n ->
-            Black (addToNeighbour i n)
-
-        DyingWhite n ->
-            DyingWhite (addToNeighbour i n)
-
-        DyingBlack n ->
-            DyingBlack (addToNeighbour i n)
-
-        Dead n ->
-            Dead (addToNeighbour i n)
+modifyNeighbourCount ( w, b ) c =
+    let
+        n =
+            { white = c.neighbours.white + w, black = c.neighbours.black + b }
+    in
+        { c | neighbours = n }
 
 
-modifyCellType : CellConstructor -> Cell -> Cell
-modifyCellType new c =
-    case c of
-        White n ->
-            new n
-
-        Black n ->
-            new n
-
-        DyingWhite n ->
-            new n
-
-        DyingBlack n ->
-            new n
-
-        Dead n ->
-            new n
+modifyCellType : Color -> State -> Cell -> Cell
+modifyCellType color state c =
+    { c | state = state, color = color }
 
 
-changeCell : CellConstructor -> ( Int, Int ) -> Index -> Board -> Board
-changeCell newType i idx board =
+changeCell : Color -> State -> ( Int, Int ) -> Index -> Board -> Board
+changeCell color state i idx board =
     let
         c =
             getBoardCell idx board
@@ -253,7 +224,7 @@ changeCell newType i idx board =
                 | cells =
                     Dict.insert
                         idx
-                        (modifyCellType newType c)
+                        (modifyCellType color state c)
                         updatedNeighbours.cells
             }
     in
@@ -262,12 +233,21 @@ changeCell newType i idx board =
 
 spawnWhite : Index -> Board -> Board
 spawnWhite =
-    changeCell White ( 1, 0 )
+    changeCell White Spawning ( 1, 0 )
 
 
 spawnBlack : Index -> Board -> Board
 spawnBlack =
-    changeCell Black ( 0, 1 )
+    changeCell Black Spawning ( 0, 1 )
+
+
+spawnToAlive : Index -> Board -> Board
+spawnToAlive idx board =
+    let
+        c =
+            getBoardCell idx board
+    in
+        changeCell c.color Alive ( 0, 0 ) idx board
 
 
 die : Index -> Board -> Board
@@ -277,17 +257,23 @@ die idx board =
             getBoardCell idx board
 
         ( modifiers, newState ) =
-            case c of
-                White _ ->
-                    ( ( -1, 0 ), DyingWhite )
+            case ( c.color, c.state ) of
+                ( White, Alive ) ->
+                    ( ( -1, 0 ), Dying )
 
-                Black _ ->
-                    ( ( 0, -1 ), DyingBlack )
+                ( White, Spawning ) ->
+                    ( ( -1, 0 ), Dying )
 
-                _ ->
+                ( Black, Alive ) ->
+                    ( ( 0, -1 ), Dying )
+
+                ( Black, Spawning ) ->
+                    ( ( 0, -1 ), Dying )
+
+                ( _, _ ) ->
                     ( ( 0, 0 ), Dead )
     in
-        changeCell newState modifiers idx board
+        changeCell c.color newState modifiers idx board
 
 
 toIndices : Cells -> List Index
@@ -342,13 +328,23 @@ indicesThatSpawnBlack board =
     indicesThatSpawnColor board (\w b -> b < 2)
 
 
-isAlive : Cell -> Bool
-isAlive c =
-    case c of
-        White _ ->
+isSpawning : Cell -> Bool
+isSpawning c =
+    case c.state of
+        Spawning ->
             True
 
-        Black _ ->
+        _ ->
+            False
+
+
+isAlive : Cell -> Bool
+isAlive c =
+    case c.state of
+        Alive ->
+            True
+
+        Spawning ->
             True
 
         _ ->
@@ -357,11 +353,8 @@ isAlive c =
 
 isDying : Cell -> Bool
 isDying c =
-    case c of
-        DyingWhite _ ->
-            True
-
-        DyingBlack _ ->
+    case c.state of
+        Dying ->
             True
 
         _ ->
@@ -370,8 +363,8 @@ isDying c =
 
 isDead : Cell -> Bool
 isDead c =
-    case c of
-        Dead _ ->
+    case c.state of
+        Dead ->
             True
 
         _ ->
@@ -384,8 +377,19 @@ evolve board =
         clearedDead =
             List.foldl die board (indicesThatShouldDie board)
 
+        onlyAlive =
+            List.foldl
+                spawnToAlive
+                clearedDead
+                (List.map
+                    (\( idx, _ ) -> idx)
+                    (Dict.toList
+                        (Dict.filter (\idx c -> isSpawning c) clearedDead.cells)
+                    )
+                )
+
         newWhite =
-            List.foldl spawnWhite clearedDead (indicesThatSpawnWhite board)
+            List.foldl spawnWhite onlyAlive (indicesThatSpawnWhite board)
 
         evolvedBoard =
             List.foldl spawnBlack newWhite (indicesThatSpawnBlack board)
@@ -672,8 +676,8 @@ cellPosition model cell idx =
     ]
 
 
-cellSizeStyle : Model -> Cell -> Index -> List (Attribute Msg)
-cellSizeStyle model cell idx =
+cellSizeStyle : Model -> List (Attribute Msg)
+cellSizeStyle model =
     let
         size =
             cellSize model
@@ -688,27 +692,18 @@ cellSizeStyle model cell idx =
 
 cellBG : Cell -> Attribute Msg
 cellBG c =
-    case c of
-        White _ ->
+    case c.color of
+        White ->
             whiteBG
 
-        Black _ ->
+        Black ->
             blackBG
-
-        DyingWhite _ ->
-            whiteBG
-
-        DyingBlack _ ->
-            blackBG
-
-        Dead _ ->
-            greyBG
 
 
 cellFG : Cell -> Attribute Msg
 cellFG c =
-    case c of
-        Black _ ->
+    case c.color of
+        Black ->
             whiteFG
 
         _ ->
@@ -718,15 +713,15 @@ cellFG c =
 aliveClass : Cell -> Attribute Msg
 aliveClass cell =
     attribute "class"
-        (case cell of
-            DyingBlack _ ->
+        (case cell.state of
+            Dying ->
                 "dying"
 
-            DyingWhite _ ->
-                "dying"
-
-            Dead _ ->
+            Dead ->
                 "dead"
+
+            Spawning ->
+                "spawning"
 
             _ ->
                 "alive"
@@ -736,7 +731,7 @@ aliveClass cell =
 viewAlive : Model -> Index -> Cell -> Html Msg
 viewAlive model idx c =
     div (cellPosition model c idx)
-        [ div ((aliveClass c) :: (cellBG c) :: (cellSizeStyle model c idx)) [ text "" ] ]
+        [ div ((aliveClass c) :: (cellBG c) :: (cellSizeStyle model)) [ text "" ] ]
 
 
 deadDisplay : Attribute Msg
@@ -751,27 +746,48 @@ deadDisplay =
 
 viewDead : Model -> Index -> Cell -> Html Msg
 viewDead model idx c =
-    div (deadDisplay :: (List.concat [ cellPosition model c idx, cellSizeStyle model c idx ]))
+    div (deadDisplay :: (List.concat [ cellPosition model c idx, cellSizeStyle model ]))
         [ text (String.fromInt (totalNeighbors c)) ]
 
 
 cellKey : Index -> String.String
 cellKey ( i, j ) =
-    String.fromInt i ++ String.fromInt j
+    String.fromInt i ++ "," ++ String.fromInt j
 
 
 viewBoard : Model -> List ( String.String, Html Msg )
 viewBoard model =
     List.map
         (\( idx, cell ) ->
-            case cell of
-                Dead _ ->
-                    ( cellKey idx, viewDead model idx cell )
+            let
+                v =
+                    case cell.state of
+                        Dead ->
+                            viewDead
 
-                _ ->
-                    ( cellKey idx, viewAlive model idx cell )
+                        _ ->
+                            viewAlive
+            in
+                ( cellKey idx, v model idx cell )
         )
-        (Dict.toList model.board.cells)
+        (Dict.toList
+            (case shouldDebug of
+                True ->
+                    model.board.cells
+
+                False ->
+                    Dict.filter
+                        (\idx cell ->
+                            case cell.state of
+                                Dead ->
+                                    False
+
+                                _ ->
+                                    True
+                        )
+                        model.board.cells
+            )
+        )
 
 
 view : Model -> Browser.Document Msg
