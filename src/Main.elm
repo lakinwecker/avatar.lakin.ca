@@ -19,23 +19,19 @@ import Tuple
 import Time
 import Url
 import String
-import Debug
 
 
 ---- Base Types ----
 
 
 type alias Size =
-    { width : Int, height : Int }
+    { width : Int
+    , height : Int
+    }
 
 
 type alias Flags =
     Size
-
-
-type alias Session =
-    { size : Size
-    }
 
 
 
@@ -62,7 +58,9 @@ boardSize =
 
 
 type alias NeighbourCounts =
-    { white : Int, black : Int }
+    { white : Int
+    , black : Int
+    }
 
 
 type Color
@@ -78,7 +76,10 @@ type State
 
 
 type alias Cell =
-    { state : State, color : Color, neighbours : NeighbourCounts }
+    { state : State
+    , color : Color
+    , neighbours : NeighbourCounts
+    }
 
 
 type alias CellConstructor =
@@ -251,7 +252,7 @@ indicesThatShouldDie : Cells -> List Index
 indicesThatShouldDie board =
     toIndices
         (Dict.filter
-            (\idx cell ->
+            (\_ cell ->
                 let
                     n =
                         totalNeighbors cell
@@ -266,7 +267,7 @@ indicesThatSpawnColor : Cells -> (Int -> Int -> Bool) -> List Index
 indicesThatSpawnColor board colorMatch =
     toIndices
         (Dict.filter
-            (\idx cell ->
+            (\_ cell ->
                 let
                     blackN =
                         mapNeighbour .black cell
@@ -282,12 +283,12 @@ indicesThatSpawnColor board colorMatch =
 
 indicesThatSpawnWhite : Cells -> List Index
 indicesThatSpawnWhite board =
-    indicesThatSpawnColor board (\w b -> w < 2)
+    indicesThatSpawnColor board (\w _ -> w < 2)
 
 
 indicesThatSpawnBlack : Cells -> List Index
 indicesThatSpawnBlack board =
-    indicesThatSpawnColor board (\w b -> b < 2)
+    indicesThatSpawnColor board (\_ b -> b < 2)
 
 
 isSpawning : Cell -> Bool
@@ -346,7 +347,7 @@ evolve board =
                 (List.map
                     (\( idx, _ ) -> idx)
                     (Dict.toList
-                        (Dict.filter (\idx c -> isSpawning c) clearedDead)
+                        (Dict.filter (\_ c -> isSpawning c) clearedDead)
                     )
                 )
 
@@ -357,7 +358,7 @@ evolve board =
             List.foldl spawnBlack newWhite (indicesThatSpawnBlack board)
     in
         (Dict.filter
-            (\idx cell -> (not (isDead cell)) || (totalNeighbors cell) > 0)
+            (\_ cell -> (not (isDead cell)) || (totalNeighbors cell) > 0)
             evolvedBoard
         )
 
@@ -400,16 +401,9 @@ avatarW =
 
 
 offsetCoords : ( Int, Int ) -> List ( Int, Int ) -> List ( Int, Int )
-offsetCoords o =
-    let
-        f =
-            Tuple.first
-
-        s =
-            Tuple.second
-    in
-        List.map
-            (\v -> ( (f v) + (f o), (s v) + (s o) ))
+offsetCoords ( oX, oY ) =
+    List.map
+        (\( vX, vY ) -> ( vX + oX, vY + oY ))
 
 
 lwOffset : ( Int, Int ) -> Cells -> Cells
@@ -450,19 +444,17 @@ type alias Model =
     { board : Cells
     , l : List ( Int, Int )
     , w : List ( Int, Int )
-    , session : Session
+    , size : Size
     , state : AnimationState
     }
 
 
 init : Flags -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
-init flags url key =
+init flags _ _ =
     ( { board = Dict.empty
       , l = avatarL
       , w = avatarW
-      , session =
-            Session
-                { width = flags.width, height = flags.height }
+      , size = { width = flags.width, height = flags.height }
       , state = BuildingL
       }
     , Cmd.none
@@ -509,7 +501,7 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        Tick t ->
+        Tick _ ->
             case model.state of
                 BuildingL ->
                     ( updateL model, Cmd.none )
@@ -529,16 +521,10 @@ update msg model =
 
         BrowserResize w h ->
             let
-                oldSession =
-                    model.session
-
-                size =
+                newSize =
                     { width = w, height = h }
-
-                newSession =
-                    { oldSession | size = size }
             in
-                ( { model | session = newSession }, Cmd.none )
+                ( { model | size = newSize }, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
@@ -611,8 +597,8 @@ cellTranslate size idx =
             ++ (translate size (Tuple.second idx) yOffset size.height)
 
 
-cellPosition : Size -> Cell -> Index -> List (Attribute Msg)
-cellPosition size cell idx =
+cellPosition : Size -> Index -> List (Attribute Msg)
+cellPosition size idx =
     [ style "top" "0"
     , style "left" "0"
     , style "position" "absolute"
@@ -671,7 +657,7 @@ aliveClass cell =
 
 viewAlive : Size -> Index -> Cell -> Html Msg
 viewAlive size idx c =
-    div (cellPosition size c idx)
+    div (cellPosition size idx)
         [ div ((aliveClass c) :: (cellBG c) :: (cellSizeStyle size)) [ text "" ] ]
 
 
@@ -687,7 +673,7 @@ deadDisplay =
 
 viewDead : Size -> Index -> Cell -> Html Msg
 viewDead size idx c =
-    div (deadDisplay :: (List.concat [ cellPosition size c idx, cellSizeStyle size ]))
+    div (deadDisplay :: (List.concat [ cellPosition size idx, cellSizeStyle size ]))
         [ text (String.fromInt (totalNeighbors c)) ]
 
 
@@ -710,7 +696,7 @@ viewBoard model =
                             viewAlive
 
                 size =
-                    model.session.size
+                    model.size
             in
                 ( cellKey idx, Lazy.lazy3 v size idx cell )
         )
@@ -719,14 +705,7 @@ viewBoard model =
                 model.board
              else
                 Dict.filter
-                    (\idx cell ->
-                        case cell.state of
-                            Dead ->
-                                False
-
-                            _ ->
-                                True
-                    )
+                    (\_ cell -> not (cell.state == Dead))
                     model.board
             )
         )
