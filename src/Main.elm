@@ -5,6 +5,7 @@
 
 module Main exposing (..)
 
+import Basics exposing (modBy)
 import Browser
 import Browser.Navigation as Nav
 import Browser.Events as Events
@@ -13,7 +14,6 @@ import Html.Keyed as Keyed
 import Html.Lazy as Lazy
 import Html.Attributes exposing (style, attribute)
 import Dict
-import Maybe
 import List
 import Tuple
 import Time
@@ -44,17 +44,7 @@ type alias Session =
 
 wrap : Int -> Int -> Int
 wrap max val =
-    case val < 0 of
-        True ->
-            wrap max (val + max)
-
-        False ->
-            case val >= max of
-                True ->
-                    wrap max (val - max)
-
-                False ->
-                    val
+    modBy max val
 
 
 shouldDebug : Bool
@@ -691,12 +681,12 @@ viewAlive size idx c =
 
 deadDisplay : Attribute Msg
 deadDisplay =
-    case shouldDebug of
-        True ->
-            style "display" "block"
-
-        False ->
-            style "display" "none"
+    style "display"
+        (if shouldDebug then
+            "block"
+         else
+            "none"
+        )
 
 
 viewDead : Size -> Index -> Cell -> Html Msg
@@ -705,12 +695,12 @@ viewDead size idx c =
         [ text (String.fromInt (totalNeighbors c)) ]
 
 
-cellKey : Index -> String.String
+cellKey : Index -> String
 cellKey ( i, j ) =
     String.fromInt i ++ "," ++ String.fromInt j
 
 
-viewBoard : Model -> List ( String.String, Html Msg )
+viewBoard : Model -> List ( String, Html Msg )
 viewBoard model =
     List.map
         (\( idx, cell ) ->
@@ -729,21 +719,19 @@ viewBoard model =
                 ( cellKey idx, Lazy.lazy3 v size idx cell )
         )
         (Dict.toList
-            (case shouldDebug of
-                True ->
+            (if shouldDebug then
+                model.board
+             else
+                Dict.filter
+                    (\idx cell ->
+                        case cell.state of
+                            Dead ->
+                                False
+
+                            _ ->
+                                True
+                    )
                     model.board
-
-                False ->
-                    Dict.filter
-                        (\idx cell ->
-                            case cell.state of
-                                Dead ->
-                                    False
-
-                                _ ->
-                                    True
-                        )
-                        model.board
             )
         )
 
