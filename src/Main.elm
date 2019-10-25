@@ -118,13 +118,13 @@ type alias Cells =
 
 
 x : Index -> Int
-x idx =
-    Tuple.first idx
+x ( f, _ ) =
+    f
 
 
 y : Index -> Int
-y idx =
-    Tuple.second idx
+y ( _, s ) =
+    s
 
 
 getBoardCell : Index -> Cells -> Cell
@@ -244,11 +244,7 @@ die idx board =
 
 toIndices : Cells -> List Index
 toIndices cells =
-    List.map
-        Tuple.first
-    <|
-        Dict.toList
-            cells
+    List.map Tuple.first (Dict.toList cells)
 
 
 indicesThatShouldDie : Cells -> List Index
