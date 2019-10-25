@@ -3,7 +3,7 @@
 -- See LICENSE for more information.
 
 
-module Main exposing (..)
+module Main exposing (main)
 
 import Basics exposing (modBy)
 import Browser
@@ -82,10 +82,6 @@ type alias Cell =
     }
 
 
-type alias CellConstructor =
-    State -> Color -> NeighbourCounts -> Cell
-
-
 mapNeighbour : (NeighbourCounts -> a) -> Cell -> a
 mapNeighbour m cell =
     m cell.neighbours
@@ -118,16 +114,6 @@ type alias Cells =
     Dict.Dict Index Cell
 
 
-x : Index -> Int
-x ( f, _ ) =
-    f
-
-
-y : Index -> Int
-y ( _, s ) =
-    s
-
-
 getBoardCell : Index -> Cells -> Cell
 getBoardCell idx board =
     Maybe.withDefault
@@ -149,19 +135,15 @@ neighbourOffsets =
 
 
 neighbours : Index -> List Index
-neighbours idx =
-    List.map
-        (\offset ->
-            ( (x idx) + (x offset), (y idx) + (y offset) )
-        )
-        neighbourOffsets
+neighbours ( iX, iY ) =
+    List.map (\( oX, oY ) -> ( iX + oX, iY + oY )) neighbourOffsets
 
 
 updateNeighbour : ( Int, Int ) -> Index -> Cells -> Cells
 updateNeighbour i idx board =
     Dict.insert
         idx
-        (modifyNeighbourCount i <| getBoardCell idx board)
+        (modifyNeighbourCount i (getBoardCell idx board))
         board
 
 
@@ -183,16 +165,15 @@ changeCell : Color -> State -> ( Int, Int ) -> Index -> Cells -> Cells
 changeCell color state i idx board =
     let
         updatedNeighbours =
-            (List.foldl
+            List.foldl
                 (updateNeighbour i)
                 board
                 (neighbours idx)
-            )
 
         newBoard =
             Dict.insert
                 idx
-                (modifyCellType color state <| getBoardCell idx board)
+                (modifyCellType color state (getBoardCell idx board))
                 updatedNeighbours
     in
         newBoard
@@ -610,7 +591,7 @@ cellSizeStyle : Size -> List (Attribute Msg)
 cellSizeStyle size =
     let
         sizepx =
-            (String.fromInt <| cellSize size) ++ "px"
+            (String.fromInt (cellSize size)) ++ "px"
     in
         [ style "height" sizepx
         , style "width" sizepx
