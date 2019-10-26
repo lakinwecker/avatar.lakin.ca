@@ -393,7 +393,7 @@ lw =
 
 type AnimationState
     = LoadingAnimation
-    | Paused
+    | LoadingPause
     | Evolving
 
 
@@ -433,7 +433,7 @@ loadNextCell model =
                 , board = spawn color idx model.board
                 , state =
                     if rest == [] then
-                        Paused
+                        LoadingPause
                     else
                         LoadingAnimation
             }
@@ -441,7 +441,7 @@ loadNextCell model =
         [] ->
             { model
                 | loadingQueue = []
-                , state = Paused
+                , state = LoadingPause
             }
 
 
@@ -460,7 +460,7 @@ update msg model =
                 LoadingAnimation ->
                     ( loadNextCell model, Cmd.none )
 
-                Paused ->
+                LoadingPause ->
                     ( { model | state = Evolving }, Cmd.none )
 
                 Evolving ->
@@ -687,7 +687,7 @@ subscriptions model =
                 Evolving ->
                     1000
 
-                Paused ->
+                LoadingPause ->
                     1500
 
                 _ ->
