@@ -5,7 +5,6 @@
 
 module Main exposing (main)
 
-import Basics exposing (modBy)
 import Browser
 import Browser.Navigation as Nav
 import Browser.Events as Events
@@ -43,6 +42,11 @@ shouldDebug =
 boardSize : Int
 boardSize =
     32
+
+
+identity : a -> a
+identity a =
+    a
 
 
 
@@ -597,7 +601,7 @@ aliveClass cell =
             Spawning ->
                 "spawning"
 
-            _ ->
+            Alive ->
                 "alive"
         )
 
@@ -624,6 +628,16 @@ viewDead size idx c =
         [ text (String.fromInt (totalNeighbors c)) ]
 
 
+viewCell : Size -> Index -> Cell -> Html Msg
+viewCell size idx c =
+    case c.state of
+        Dead ->
+            viewDead size idx c
+
+        _ ->
+            viewAlive size idx c
+
+
 cellKey : Index -> String
 cellKey ( i, j ) =
     String.fromInt i ++ "," ++ String.fromInt j
@@ -631,31 +645,21 @@ cellKey ( i, j ) =
 
 viewBoard : Model -> List ( String, Html Msg )
 viewBoard model =
-    List.map
-        (\( idx, cell ) ->
-            let
-                v =
-                    case cell.state of
-                        Dead ->
-                            viewDead
-
-                        _ ->
-                            viewAlive
-
-                size =
-                    model.size
-            in
-                ( cellKey idx, Lazy.lazy3 v size idx cell )
-        )
-        (Dict.toList
-            (if shouldDebug then
-                model.board
-             else
+    let
+        maybeFilterDead =
+            if shouldDebug then
+                identity
+            else
                 Dict.filter
                     (\_ cell -> not (cell.state == Dead))
-                    model.board
-            )
-        )
+    in
+        model.board
+            |> maybeFilterDead
+            |> Dict.toList
+            |> List.map
+                (\( idx, cell ) ->
+                    ( cellKey idx, Lazy.lazy3 viewCell model.size idx cell )
+                )
 
 
 view : Model -> Browser.Document Msg
@@ -678,15 +682,18 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         [ Events.onResize BrowserResize
-        , case model.state of
-            Evolving ->
-                Time.every 1000 Tick
+        , Time.every
+            (case model.state of
+                Evolving ->
+                    1000
 
-            Paused ->
-                Time.every 1500 Tick
+                Paused ->
+                    1500
 
-            _ ->
-                Time.every 30 Tick
+                _ ->
+                    30
+            )
+            Tick
         ]
 
 
