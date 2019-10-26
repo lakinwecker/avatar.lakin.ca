@@ -218,11 +218,6 @@ die idx board =
         changeCell c.color newState modifiers idx board
 
 
-toIndices : Cells -> List Index
-toIndices cells =
-    List.map Tuple.first (Dict.toList cells)
-
-
 indicesThatShouldDie : Cells -> List Index
 indicesThatShouldDie board =
     let
@@ -245,7 +240,7 @@ indicesThatSpawnColor board colorMatch =
                 whiteN =
                     cell.neighbours.white
             in
-                (not (isAlive cell)) && (blackN + whiteN) == 3 && (colorMatch whiteN blackN)
+                not (isAlive cell) && blackN + whiteN == 3 && colorMatch whiteN blackN
     in
         board
             |> Dict.filter shouldSpawn
@@ -313,7 +308,7 @@ evolve board =
                 |> List.foldl (spawn Black) b
 
         relevantCells _ cell =
-            not (isDead cell) || (totalNeighbors cell) > 0
+            not (isDead cell) || totalNeighbors cell > 0
 
         removeIrrelevantCells b =
             Dict.filter relevantCells b
@@ -324,19 +319,6 @@ evolve board =
             |> spawnNewWhite
             |> spawnNewBlack
             |> removeIrrelevantCells
-
-
-glider : Cells -> Cells
-glider board =
-    List.foldl
-        (spawn White)
-        board
-        [ ( 9, 9 )
-        , ( 10, 9 )
-        , ( 11, 9 )
-        , ( 11, 8 )
-        , ( 10, 7 )
-        ]
 
 
 avatarL : List ( Int, Int )
@@ -410,8 +392,8 @@ init flags _ _ =
     ( { board = Dict.empty
       , loadingQueue =
             List.concat
-                [ (List.map (\idx -> ( idx, Black )) avatarL)
-                , (List.map (\idx -> ( idx, White )) avatarW)
+                [ List.map (\idx -> ( idx, Black )) avatarL
+                , List.map (\idx -> ( idx, White )) avatarW
                 ]
       , size = { width = flags.width, height = flags.height }
       , state = LoadingAnimation
@@ -529,9 +511,9 @@ translate : Size -> Int -> Int -> Int -> String
 translate size idx offset wrapSize =
     let
         val =
-            modBy wrapSize (((cellSize size) * idx) + offset)
+            modBy wrapSize ((cellSize size * idx) + offset)
     in
-        (String.fromInt val) ++ "px"
+        String.fromInt val ++ "px"
 
 
 cellTranslate : Size -> Index -> String
@@ -543,9 +525,9 @@ cellTranslate size ( x, y ) =
         yOffset =
             size.height // 2
     in
-        (translate size x xOffset size.width)
+        translate size x xOffset size.width
             ++ ", "
-            ++ (translate size y yOffset size.height)
+            ++ translate size y yOffset size.height
 
 
 cellPosition : Size -> Index -> List (Attribute Msg)
@@ -553,7 +535,7 @@ cellPosition size idx =
     [ style "top" "0"
     , style "left" "0"
     , style "position" "absolute"
-    , style "transform" ("translate(" ++ (cellTranslate size idx) ++ ")")
+    , style "transform" ("translate(" ++ cellTranslate size idx ++ ")")
     ]
 
 
@@ -561,7 +543,7 @@ cellSizeStyle : Size -> List (Attribute Msg)
 cellSizeStyle size =
     let
         sizepx =
-            (String.fromInt (cellSize size)) ++ "px"
+            String.fromInt (cellSize size) ++ "px"
     in
         [ style "height" sizepx
         , style "width" sizepx
@@ -609,7 +591,7 @@ aliveClass cell =
 viewAlive : Size -> Index -> Cell -> Html Msg
 viewAlive size idx c =
     div (cellPosition size idx)
-        [ div ((aliveClass c) :: (cellBG c) :: (cellSizeStyle size)) [ text "" ] ]
+        [ div (aliveClass c :: cellBG c :: cellSizeStyle size) [ text "" ] ]
 
 
 deadDisplay : Attribute Msg
@@ -624,7 +606,7 @@ deadDisplay =
 
 viewDead : Size -> Index -> Cell -> Html Msg
 viewDead size idx c =
-    div (deadDisplay :: (List.concat [ cellPosition size idx, cellSizeStyle size ]))
+    div (deadDisplay :: List.concat [ cellPosition size idx, cellSizeStyle size ])
         [ text (String.fromInt (totalNeighbors c)) ]
 
 
