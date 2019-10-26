@@ -14,11 +14,8 @@ import Html.Keyed as Keyed
 import Html.Lazy as Lazy
 import Html.Attributes exposing (style, attribute)
 import Dict
-import List
-import Tuple
 import Time
 import Url
-import String
 
 
 ---- Base Types ----
@@ -36,11 +33,6 @@ type alias Flags =
 
 
 ---- Utils ----
-
-
-wrap : Int -> Int -> Int
-wrap max val =
-    modBy max val
 
 
 shouldDebug : Bool
@@ -82,14 +74,9 @@ type alias Cell =
     }
 
 
-mapNeighbour : (NeighbourCounts -> a) -> Cell -> a
-mapNeighbour m cell =
-    m cell.neighbours
-
-
 totalNeighbors : Cell -> Int
-totalNeighbors =
-    mapNeighbour (\n -> n.white + n.black)
+totalNeighbors cell =
+    cell.neighbours.white + cell.neighbours.black
 
 
 defaultNeighbours : NeighbourCounts
@@ -134,8 +121,8 @@ neighbourOffsets =
     ]
 
 
-neighbours : Index -> List Index
-neighbours ( iX, iY ) =
+neighboursIndices : Index -> List Index
+neighboursIndices ( iX, iY ) =
     List.map (\( oX, oY ) -> ( iX + oX, iY + oY )) neighbourOffsets
 
 
@@ -168,7 +155,7 @@ changeCell color state i idx board =
             List.foldl
                 (updateNeighbour i)
                 board
-                (neighbours idx)
+                (neighboursIndices idx)
 
         newBoard =
             Dict.insert
@@ -179,14 +166,17 @@ changeCell color state i idx board =
         newBoard
 
 
-spawnWhite : Index -> Cells -> Cells
-spawnWhite =
-    changeCell White Spawning ( 1, 0 )
+spawn : Color -> Index -> Cells -> Cells
+spawn color =
+    changeCell color
+        Spawning
+        (case color of
+            White ->
+                ( 1, 0 )
 
-
-spawnBlack : Index -> Cells -> Cells
-spawnBlack =
-    changeCell Black Spawning ( 0, 1 )
+            Black ->
+                ( 0, 1 )
+        )
 
 
 spawnToAlive : Index -> Cells -> Cells
@@ -231,35 +221,31 @@ toIndices cells =
 
 indicesThatShouldDie : Cells -> List Index
 indicesThatShouldDie board =
-    toIndices
-        (Dict.filter
-            (\_ cell ->
-                let
-                    n =
-                        totalNeighbors cell
-                in
-                    (isAlive cell && (n < 2 || n > 3)) || (isDying cell)
-            )
-            board
-        )
+    let
+        shouldBeDying _ cell =
+            (isAlive cell && shouldDie cell) || isDying cell
+    in
+        board
+            |> Dict.filter shouldBeDying
+            |> Dict.keys
 
 
 indicesThatSpawnColor : Cells -> (Int -> Int -> Bool) -> List Index
 indicesThatSpawnColor board colorMatch =
-    toIndices
-        (Dict.filter
-            (\_ cell ->
-                let
-                    blackN =
-                        mapNeighbour .black cell
+    let
+        shouldSpawn _ cell =
+            let
+                blackN =
+                    cell.neighbours.black
 
-                    whiteN =
-                        mapNeighbour .white cell
-                in
-                    (not (isAlive cell)) && (blackN + whiteN) == 3 && (colorMatch whiteN blackN)
-            )
-            board
-        )
+                whiteN =
+                    cell.neighbours.white
+            in
+                (not (isAlive cell)) && (blackN + whiteN) == 3 && (colorMatch whiteN blackN)
+    in
+        board
+            |> Dict.filter shouldSpawn
+            |> Dict.keys
 
 
 indicesThatSpawnWhite : Cells -> List Index
@@ -272,82 +258,74 @@ indicesThatSpawnBlack board =
     indicesThatSpawnColor board (\_ b -> b < 2)
 
 
+shouldDie : Cell -> Bool
+shouldDie cell =
+    let
+        neighbourCount =
+            cell.neighbours.white + cell.neighbours.black
+    in
+        neighbourCount < 2 || neighbourCount > 3
+
+
 isSpawning : Cell -> Bool
 isSpawning c =
-    case c.state of
-        Spawning ->
-            True
-
-        _ ->
-            False
+    c.state == Spawning
 
 
 isAlive : Cell -> Bool
 isAlive c =
-    case c.state of
-        Alive ->
-            True
-
-        Spawning ->
-            True
-
-        _ ->
-            False
+    c.state == Alive || c.state == Spawning
 
 
 isDying : Cell -> Bool
 isDying c =
-    case c.state of
-        Dying ->
-            True
-
-        _ ->
-            False
+    c.state == Dying
 
 
 isDead : Cell -> Bool
 isDead c =
-    case c.state of
-        Dead ->
-            True
-
-        _ ->
-            False
+    c.state == Dead
 
 
 evolve : Cells -> Cells
 evolve board =
     let
-        clearedDead =
-            List.foldl die board (indicesThatShouldDie board)
+        clearDead b =
+            indicesThatShouldDie board
+                |> List.foldl die b
 
-        onlyAlive =
-            List.foldl
-                spawnToAlive
-                clearedDead
-                (List.map
-                    (\( idx, _ ) -> idx)
-                    (Dict.toList
-                        (Dict.filter (\_ c -> isSpawning c) clearedDead)
-                    )
-                )
+        changeSpawningToAlive b =
+            b
+                |> Dict.filter (\_ c -> isSpawning c)
+                |> Dict.keys
+                |> List.foldl spawnToAlive b
 
-        newWhite =
-            List.foldl spawnWhite onlyAlive (indicesThatSpawnWhite board)
+        spawnNewWhite b =
+            indicesThatSpawnWhite board
+                |> List.foldl (spawn White) b
 
-        evolvedBoard =
-            List.foldl spawnBlack newWhite (indicesThatSpawnBlack board)
+        spawnNewBlack b =
+            indicesThatSpawnBlack board
+                |> List.foldl (spawn Black) b
+
+        relevantCells _ cell =
+            not (isDead cell) || (totalNeighbors cell) > 0
+
+        removeIrrelevantCells b =
+            Dict.filter relevantCells b
     in
-        (Dict.filter
-            (\_ cell -> (not (isDead cell)) || (totalNeighbors cell) > 0)
-            evolvedBoard
-        )
+        board
+            |> clearDead
+            |> changeSpawningToAlive
+            |> spawnNewWhite
+            |> spawnNewBlack
+            |> removeIrrelevantCells
 
 
 glider : Cells -> Cells
 glider board =
     List.foldl
-        spawnWhite
+        (spawn White)
         board
         [ ( 9, 9 )
         , ( 10, 9 )
@@ -390,19 +368,14 @@ offsetCoords ( oX, oY ) =
 lwOffset : ( Int, Int ) -> Cells -> Cells
 lwOffset o board =
     let
-        justL =
-            List.foldl
-                spawnWhite
-                board
-                (offsetCoords o avatarW)
-
-        justLW =
-            List.foldl
-                spawnBlack
-                justL
-                (offsetCoords o avatarL)
+        offsetCells spawnColor coords b =
+            coords
+                |> offsetCoords o
+                |> List.foldl spawnColor b
     in
-        justLW
+        board
+            |> offsetCells (spawn White) avatarW
+            |> offsetCells (spawn Black) avatarL
 
 
 lw : Cells -> Cells
@@ -415,16 +388,14 @@ lw =
 
 
 type AnimationState
-    = BuildingL
-    | BuildingW
-    | Pause
-    | Going
+    = LoadingAnimation
+    | Paused
+    | Evolving
 
 
 type alias Model =
     { board : Cells
-    , l : List ( Int, Int )
-    , w : List ( Int, Int )
+    , loadingQueue : List ( ( Int, Int ), Color )
     , size : Size
     , state : AnimationState
     }
@@ -433,10 +404,13 @@ type alias Model =
 init : Flags -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init flags _ _ =
     ( { board = Dict.empty
-      , l = avatarL
-      , w = avatarW
+      , loadingQueue =
+            List.concat
+                [ (List.map (\idx -> ( idx, Black )) avatarL)
+                , (List.map (\idx -> ( idx, White )) avatarW)
+                ]
       , size = { width = flags.width, height = flags.height }
-      , state = BuildingL
+      , state = LoadingAnimation
       }
     , Cmd.none
     )
@@ -446,30 +420,25 @@ init flags _ _ =
 ---- UPDATE ----
 
 
-updateL : Model -> Model
-updateL model =
-    case model.l of
-        first :: [] ->
-            { model | l = [], board = (spawnBlack first model.board), state = BuildingW }
-
-        first :: rest ->
-            { model | l = rest, board = (spawnBlack first model.board) }
-
-        [] ->
-            { model | l = [], state = BuildingW }
-
-
-updateW : Model -> Model
-updateW model =
-    case model.w of
-        first :: [] ->
-            { model | w = [], board = (spawnWhite first model.board), state = Pause }
-
-        first :: rest ->
-            { model | w = rest, board = (spawnWhite first model.board) }
+loadNextCell : Model -> Model
+loadNextCell model =
+    case model.loadingQueue of
+        ( idx, color ) :: rest ->
+            { model
+                | loadingQueue = rest
+                , board = spawn color idx model.board
+                , state =
+                    if rest == [] then
+                        Paused
+                    else
+                        LoadingAnimation
+            }
 
         [] ->
-            { model | w = [], state = Pause }
+            { model
+                | loadingQueue = []
+                , state = Paused
+            }
 
 
 type Msg
@@ -484,16 +453,13 @@ update msg model =
     case msg of
         Tick _ ->
             case model.state of
-                BuildingL ->
-                    ( updateL model, Cmd.none )
+                LoadingAnimation ->
+                    ( loadNextCell model, Cmd.none )
 
-                BuildingW ->
-                    ( updateW model, Cmd.none )
+                Paused ->
+                    ( { model | state = Evolving }, Cmd.none )
 
-                Pause ->
-                    ( { model | state = Going }, Cmd.none )
-
-                Going ->
+                Evolving ->
                     let
                         newBoard =
                             evolve model.board
@@ -559,13 +525,13 @@ translate : Size -> Int -> Int -> Int -> String
 translate size idx offset wrapSize =
     let
         val =
-            wrap wrapSize (((cellSize size) * idx) + offset)
+            modBy wrapSize (((cellSize size) * idx) + offset)
     in
         (String.fromInt val) ++ "px"
 
 
 cellTranslate : Size -> Index -> String
-cellTranslate size idx =
+cellTranslate size ( x, y ) =
     let
         xOffset =
             size.width // 2
@@ -573,9 +539,9 @@ cellTranslate size idx =
         yOffset =
             size.height // 2
     in
-        (translate size (Tuple.first idx) xOffset size.width)
+        (translate size x xOffset size.width)
             ++ ", "
-            ++ (translate size (Tuple.second idx) yOffset size.height)
+            ++ (translate size y yOffset size.height)
 
 
 cellPosition : Size -> Index -> List (Attribute Msg)
@@ -713,10 +679,10 @@ subscriptions model =
     Sub.batch
         [ Events.onResize BrowserResize
         , case model.state of
-            Going ->
+            Evolving ->
                 Time.every 1000 Tick
 
-            Pause ->
+            Paused ->
                 Time.every 1500 Tick
 
             _ ->
