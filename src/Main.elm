@@ -566,7 +566,7 @@ cellFG c =
         Black ->
             whiteFG
 
-        _ ->
+        White ->
             blackFG
 
 
