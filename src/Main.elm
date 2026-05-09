@@ -6,7 +6,6 @@
 module Main exposing (main)
 
 import Browser
-import Browser.Navigation as Nav
 import Browser.Events as Events
 import Html exposing (Html, Attribute, div, text)
 import Html.Keyed as Keyed
@@ -14,7 +13,6 @@ import Html.Lazy as Lazy
 import Html.Attributes exposing (style, attribute)
 import Dict
 import Time
-import Url
 
 
 ---- Base Types ----
@@ -27,7 +25,9 @@ type alias Size =
 
 
 type alias Flags =
-    Size
+    { size : Size
+    , gridSize : Int
+    }
 
 
 
@@ -39,8 +39,8 @@ shouldDebug =
     False
 
 
-boardSize : Int
-boardSize =
+defaultBoardSize : Int
+defaultBoardSize =
     32
 
 
@@ -383,19 +383,21 @@ type alias Model =
     { board : Cells
     , loadingQueue : List ( ( Int, Int ), Color )
     , size : Size
+    , boardSize : Int
     , state : AnimationState
     }
 
 
-init : Flags -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
-init flags _ _ =
+init : Flags -> ( Model, Cmd Msg )
+init flags =
     ( { board = Dict.empty
       , loadingQueue =
             List.concat
                 [ List.map (\idx -> ( idx, Black )) avatarL
                 , List.map (\idx -> ( idx, White )) avatarW
                 ]
-      , size = { width = flags.width, height = flags.height }
+      , size = flags.size
+      , boardSize = flags.gridSize
       , state = LoadingAnimation
       }
     , Cmd.none
@@ -428,9 +430,7 @@ loadNextCell model =
 
 
 type Msg
-    = LinkClicked Browser.UrlRequest
-    | UrlChanged Url.Url
-    | BrowserResize Int Int
+    = BrowserResize Int Int
     | Tick Time.Posix
 
 
@@ -458,9 +458,6 @@ update msg model =
                     { width = w, height = h }
             in
                 ( { model | size = newSize }, Cmd.none )
-
-        _ ->
-            ( model, Cmd.none )
 
 
 
@@ -502,48 +499,51 @@ blackFG =
     style "color" "rgb(255, 255, 255)"
 
 
-cellSize : Size -> Int
-cellSize size =
-    min size.height size.width // boardSize
+cellSize : Int -> Size -> Int
+cellSize bSize size =
+    min size.height size.width // bSize
 
 
-translate : Size -> Int -> Int -> Int -> String
-translate size idx offset wrapSize =
+translate : Int -> Size -> Int -> Int -> Int -> String
+translate bSize size idx offset wrapSize =
     let
         val =
-            modBy wrapSize ((cellSize size * idx) + offset)
+            modBy wrapSize ((cellSize bSize size * idx) + offset)
     in
         String.fromInt val ++ "px"
 
 
-cellTranslate : Size -> Index -> String
-cellTranslate size ( x, y ) =
+cellTranslate : Int -> Size -> Index -> String
+cellTranslate bSize size ( x, y ) =
     let
+        halfCell =
+            cellSize bSize size // 2
+
         xOffset =
-            size.width // 2
+            (size.width // 2) - halfCell
 
         yOffset =
-            size.height // 2
+            (size.height // 2) - halfCell
     in
-        translate size x xOffset size.width
+        translate bSize size x xOffset size.width
             ++ ", "
-            ++ translate size y yOffset size.height
+            ++ translate bSize size y yOffset size.height
 
 
-cellPosition : Size -> Index -> List (Attribute Msg)
-cellPosition size idx =
+cellPosition : Int -> Size -> Index -> List (Attribute Msg)
+cellPosition bSize size idx =
     [ style "top" "0"
     , style "left" "0"
     , style "position" "absolute"
-    , style "transform" ("translate(" ++ cellTranslate size idx ++ ")")
+    , style "transform" ("translate(" ++ cellTranslate bSize size idx ++ ")")
     ]
 
 
-cellSizeStyle : Size -> List (Attribute Msg)
-cellSizeStyle size =
+cellSizeStyle : Int -> Size -> List (Attribute Msg)
+cellSizeStyle bSize size =
     let
         sizepx =
-            String.fromInt (cellSize size) ++ "px"
+            String.fromInt (cellSize bSize size) ++ "px"
     in
         [ style "height" sizepx
         , style "width" sizepx
@@ -558,16 +558,6 @@ cellBG c =
 
         Black ->
             blackBG
-
-
-cellFG : Cell -> Attribute Msg
-cellFG c =
-    case c.color of
-        Black ->
-            whiteFG
-
-        White ->
-            blackFG
 
 
 aliveClass : Cell -> Attribute Msg
@@ -588,10 +578,10 @@ aliveClass cell =
         )
 
 
-viewAlive : Size -> Index -> Cell -> Html Msg
-viewAlive size idx c =
-    div (cellPosition size idx)
-        [ div (aliveClass c :: cellBG c :: cellSizeStyle size) [ text "" ] ]
+viewAlive : Int -> Size -> Index -> Cell -> Html Msg
+viewAlive bSize size idx c =
+    div (cellPosition bSize size idx)
+        [ div (aliveClass c :: cellBG c :: cellSizeStyle bSize size) [ text "" ] ]
 
 
 deadDisplay : Attribute Msg
@@ -604,20 +594,20 @@ deadDisplay =
         )
 
 
-viewDead : Size -> Index -> Cell -> Html Msg
-viewDead size idx c =
-    div (deadDisplay :: List.concat [ cellPosition size idx, cellSizeStyle size ])
+viewDead : Int -> Size -> Index -> Cell -> Html Msg
+viewDead bSize size idx c =
+    div (deadDisplay :: List.concat [ cellPosition bSize size idx, cellSizeStyle bSize size ])
         [ text (String.fromInt (totalNeighbors c)) ]
 
 
-viewCell : Size -> Index -> Cell -> Html Msg
-viewCell size idx c =
+viewCell : Int -> Size -> Index -> Cell -> Html Msg
+viewCell bSize size idx c =
     case c.state of
         Dead ->
-            viewDead size idx c
+            viewDead bSize size idx c
 
         _ ->
-            viewAlive size idx c
+            viewAlive bSize size idx c
 
 
 cellKey : Index -> String
@@ -640,24 +630,21 @@ viewBoard model =
             |> Dict.toList
             |> List.map
                 (\( idx, cell ) ->
-                    ( cellKey idx, Lazy.lazy3 viewCell model.size idx cell )
+                    ( cellKey idx, Lazy.lazy4 viewCell model.boardSize model.size idx cell )
                 )
 
 
-view : Model -> Browser.Document Msg
+view : Model -> Html Msg
 view model =
-    { title = "Lakin Wecker's Avatar"
-    , body =
-        [ Keyed.node "div"
-            [ style "position" "relative"
-            , style "display" "block"
-            , style "height" "100%"
-            , style "width" "100%"
-            , blueBG
-            ]
-            (viewBoard model)
+    Keyed.node "div"
+        [ style "position" "relative"
+        , style "display" "block"
+        , style "overflow" "hidden"
+        , style "height" (String.fromInt model.size.height ++ "px")
+        , style "width" (String.fromInt model.size.width ++ "px")
+        , blueBG
         ]
-    }
+        (viewBoard model)
 
 
 subscriptions : Model -> Sub Msg
@@ -685,11 +672,9 @@ subscriptions model =
 
 main : Program Flags Model Msg
 main =
-    Browser.application
+    Browser.element
         { init = init
         , view = view
         , update = update
         , subscriptions = subscriptions
-        , onUrlChange = UrlChanged
-        , onUrlRequest = LinkClicked
         }

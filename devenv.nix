@@ -24,6 +24,11 @@
       ELM_FLAGS="--optimize" bunx vite build
     '';
 
+    preview.exec = ''
+      build-opt
+      bunx vite preview
+    '';
+
     deploy.exec = ''
       build-opt
       rsync -azP ./build/ lakin@lakin.ca:~/webapps/www.lakin.ca/source/avatar/

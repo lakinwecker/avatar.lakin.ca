@@ -10,10 +10,19 @@
     <meta name="theme-color" content="#000000">
     <title>Lakin Wecker's Avatar</title>
     <link rel="shortcut icon" type="image/png" href="/avatar/favicon.png"/>
-<style> 
-    html,
-    body,
-    #root {height: 100%; margin: 0; padding: 0; overflow: hidden;}
+<style>
+    html, body { height: 100%; margin: 0; padding: 0; }
+    body {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 20px;
+      box-sizing: border-box;
+      background: #1a1a1a;
+    }
+    [data-avatar] { overflow: hidden; border-radius: 8px; border: 2px solid white; }
 
     @keyframes spawn {
         from {transform: scale(0.0);}
@@ -41,7 +50,22 @@
     <noscript>
         You need to enable JavaScript to run this app.
     </noscript>
-    <div id="root"></div>
+
+    <!-- Large: 400x400, default 32x32 grid -->
+    <div data-avatar style="width:400px;height:400px"></div>
+
+    <!-- Medium: 200x200, 16x16 grid -->
+    <div data-avatar data-grid-size="16" style="width:200px;height:200px"></div>
+
+    <!-- Small: 100x100, fixed 8px cells -->
+    <div data-avatar data-cell-size="8" style="width:100px;height:100px"></div>
+
+    <!-- Wide banner: 600x150 -->
+    <div data-avatar data-grid-size="12" style="width:600px;height:150px"></div>
+
+    <!-- Tiny icon: 48x48 -->
+    <div data-avatar data-cell-size="6" style="width:48px;height:48px"></div>
+
     <script type="module" src="/src/index.js"></script>
 </body>
 </html>
