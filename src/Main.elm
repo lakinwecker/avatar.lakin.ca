@@ -504,110 +504,61 @@ cellSize bSize size =
     min size.height size.width // bSize
 
 
-translate : Int -> Size -> Int -> Int -> Int -> String
-translate bSize size idx offset wrapSize =
-    let
-        val =
-            modBy wrapSize ((cellSize bSize size * idx) + offset)
-    in
-        String.fromInt val ++ "px"
+gridCoords : Int -> Index -> ( Int, Int )
+gridCoords bSize ( x, y ) =
+    ( modBy bSize (x + bSize // 2) + 1
+    , modBy bSize (y + bSize // 2) + 1
+    )
 
 
-cellTranslate : Int -> Size -> Index -> String
-cellTranslate bSize size ( x, y ) =
-    let
-        halfCell =
-            cellSize bSize size // 2
-
-        xOffset =
-            (size.width // 2) - halfCell
-
-        yOffset =
-            (size.height // 2) - halfCell
-    in
-        translate bSize size x xOffset size.width
-            ++ ", "
-            ++ translate bSize size y yOffset size.height
-
-
-cellPosition : Int -> Size -> Index -> List (Attribute Msg)
-cellPosition bSize size idx =
-    [ style "top" "0"
-    , style "left" "0"
-    , style "position" "absolute"
-    , style "transform" ("translate(" ++ cellTranslate bSize size idx ++ ")")
-    ]
-
-
-cellSizeStyle : Int -> Size -> List (Attribute Msg)
-cellSizeStyle bSize size =
-    let
-        sizepx =
-            String.fromInt (cellSize bSize size) ++ "px"
-    in
-        [ style "height" sizepx
-        , style "width" sizepx
-        ]
-
-
-cellBG : Cell -> Attribute Msg
-cellBG c =
-    case c.color of
+cellColorCss : Color -> String
+cellColorCss color =
+    case color of
         White ->
-            whiteBG
+            "rgb(255,255,255)"
 
         Black ->
-            blackBG
+            "rgb(0,0,0)"
 
 
-aliveClass : Cell -> Attribute Msg
-aliveClass cell =
-    attribute "class"
-        (case cell.state of
-            Dying ->
-                "dying"
+stateClass : State -> String
+stateClass s =
+    case s of
+        Spawning ->
+            "animate__animated animate__zoomIn"
 
-            Dead ->
-                "dead"
+        Alive ->
+            "alive"
 
-            Spawning ->
-                "spawning"
+        Dying ->
+            "animate__animated animate__zoomOut"
 
-            Alive ->
-                "alive"
-        )
-
-
-viewAlive : Int -> Size -> Index -> Cell -> Html Msg
-viewAlive bSize size idx c =
-    div (cellPosition bSize size idx)
-        [ div (aliveClass c :: cellBG c :: cellSizeStyle bSize size) [ text "" ] ]
-
-
-deadDisplay : Attribute Msg
-deadDisplay =
-    style "display"
-        (if shouldDebug then
-            "block"
-         else
-            "none"
-        )
-
-
-viewDead : Int -> Size -> Index -> Cell -> Html Msg
-viewDead bSize size idx c =
-    div (deadDisplay :: List.concat [ cellPosition bSize size idx, cellSizeStyle bSize size ])
-        [ text (String.fromInt (totalNeighbors c)) ]
-
-
-viewCell : Int -> Size -> Index -> Cell -> Html Msg
-viewCell bSize size idx c =
-    case c.state of
         Dead ->
-            viewDead bSize size idx c
+            "dead"
 
-        _ ->
-            viewAlive bSize size idx c
+
+viewCell : Int -> Index -> Cell -> Html Msg
+viewCell bSize idx c =
+    let
+        ( col, row ) =
+            gridCoords bSize idx
+
+        attrs =
+            [ attribute "class" ("cell " ++ stateClass c.state)
+            , style "grid-column" (String.fromInt col)
+            , style "grid-row" (String.fromInt row)
+            , style "background-color" (cellColorCss c.color)
+            ]
+    in
+        case c.state of
+            Dead ->
+                if shouldDebug then
+                    div attrs [ text (String.fromInt (totalNeighbors c)) ]
+                else
+                    text ""
+
+            _ ->
+                div attrs []
 
 
 cellKey : Index -> String
@@ -630,21 +581,27 @@ viewBoard model =
             |> Dict.toList
             |> List.map
                 (\( idx, cell ) ->
-                    ( cellKey idx, Lazy.lazy4 viewCell model.boardSize model.size idx cell )
+                    ( cellKey idx, Lazy.lazy3 viewCell model.boardSize idx cell )
                 )
 
 
 view : Model -> Html Msg
 view model =
-    Keyed.node "div"
-        [ style "position" "relative"
-        , style "display" "block"
-        , style "overflow" "hidden"
-        , style "height" (String.fromInt model.size.height ++ "px")
-        , style "width" (String.fromInt model.size.width ++ "px")
-        , blueBG
-        ]
-        (viewBoard model)
+    let
+        sizepx =
+            String.fromInt (cellSize model.boardSize model.size) ++ "px"
+
+        repeated =
+            "repeat(" ++ String.fromInt model.boardSize ++ ", " ++ sizepx ++ ")"
+    in
+        Keyed.node "div"
+            [ attribute "class" "board"
+            , style "grid-template-columns" repeated
+            , style "grid-template-rows" repeated
+            , style "width" (String.fromInt model.size.width ++ "px")
+            , style "height" (String.fromInt model.size.height ++ "px")
+            ]
+            (viewBoard model)
 
 
 subscriptions : Model -> Sub Msg

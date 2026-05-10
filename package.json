@@ -8,5 +8,8 @@
   "devDependencies": {
     "vite": "^6",
     "vite-plugin-elm": "^3"
+  },
+  "dependencies": {
+    "animate.css": "^4.1.1"
   }
 }

@@ -1,6 +1,7 @@
 /* Copyright 2019 Lakin Wecker
    Licensed under the GPL v3.0
    See LICENSE for more information. */
+import "animate.css";
 import { Elm } from "./Main.elm";
 
 const DEFAULT_GRID_SIZE = 32;
