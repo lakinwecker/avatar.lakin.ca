@@ -10,41 +10,8 @@
     <meta name="theme-color" content="#000000">
     <title>Lakin Wecker's Avatar</title>
     <link rel="shortcut icon" type="image/png" href="/avatar/favicon.png"/>
-    <script>
-      (function () {
-        var theme = localStorage.getItem('theme') || 'system';
-        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        var isDark = theme === 'dark' || (theme === 'system' && prefersDark);
-        document.documentElement.classList.add(isDark ? 'dark' : 'light');
-      })();
-    </script>
 <style>
-    /* Open-Props palette values matching lakin.ca's theming. */
-    :root {
-      color-scheme: light dark;
-      --surface: #f8f9fa;     /* gray-0 */
-      --text:    #212529;     /* gray-9 */
-      --primary: #228be6;     /* blue-6 */
-      --accent:  #ffd43b;     /* yellow-4 */
-      --border:  #dee2e6;     /* gray-4 */
-    }
-    @media (prefers-color-scheme: dark) {
-      :root:not(.light) {
-        --surface: #212529;   /* gray-9 */
-        --text:    #f8f9fa;   /* gray-0 */
-        --primary: #74c0fc;   /* blue-4 */
-        --accent:  #ffe066;   /* yellow-3 */
-        --border:  #495057;   /* gray-7 */
-      }
-    }
-    :root.dark {
-      --surface: #212529;
-      --text:    #f8f9fa;
-      --primary: #74c0fc;
-      --accent:  #ffe066;
-      --border:  #495057;
-    }
-
+    /* Local-dev test harness only — the production embed lives at lakin.ca/avatar. */
     html, body { height: 100%; margin: 0; padding: 0; }
     body {
       display: flex;
@@ -53,33 +20,14 @@
       align-content: center;
       justify-content: center;
       gap: 20px;
-      padding: 40px 20px;
+      padding: 20px;
       box-sizing: border-box;
-      background: var(--surface);
-      color: var(--text);
-      font-family: system-ui, -apple-system, sans-serif;
+      background: #1a1a1a;
     }
-    /* Decorative color stripes top and bottom — primary and accent. */
-    body::before, body::after {
-      content: "";
-      position: fixed;
-      left: 0;
-      right: 0;
-      height: 6px;
-      background: linear-gradient(
-        to right,
-        var(--primary) 0 40%,
-        var(--accent) 40% 60%,
-        var(--primary) 60% 100%
-      );
-    }
-    body::before { top: 0; }
-    body::after { bottom: 0; }
-
     [data-avatar] {
       overflow: hidden;
       border-radius: 8px;
-      border: 2px solid var(--border);
+      border: 2px solid #ffd43b;
       content-visibility: auto;
     }
 
