@@ -29,14 +29,15 @@
       bunx vite preview
     '';
 
-    # Build optimized assets and copy them into the lakin.ca personal site,
-    # replacing the existing avatar embed entirely.
+    # Build optimized assets and copy the embed bundle into the lakin.ca site.
+    # Only avatar.js / avatar.css are copied — the demo HTML is served by the
+    # Astro page at /avatar.
     copy-to-lakin.exec = ''
       build-opt
       DEST="$HOME/personal-repos/lakin.ca/public/avatar"
       mkdir -p "$DEST"
-      rsync -a --delete build/ "$DEST/"
-      echo "Synced build/ to $DEST"
+      cp build/avatar.js build/avatar.css "$DEST/"
+      echo "Copied avatar.js and avatar.css to $DEST"
     '';
   };
 }
