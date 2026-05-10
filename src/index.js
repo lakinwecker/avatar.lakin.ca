@@ -12,7 +12,10 @@ export function init(node, opts = {}) {
 
   let gridSize;
   if (opts.cellSize) {
-    gridSize = Math.floor(Math.min(width, height) / opts.cellSize);
+    // Round down to nearest even — the LW bounding box is even-width, so an
+    // odd-sized grid can never center it exactly.
+    const raw = Math.floor(Math.min(width, height) / opts.cellSize);
+    gridSize = raw - (raw % 2);
   } else {
     gridSize = opts.gridSize || DEFAULT_GRID_SIZE;
   }

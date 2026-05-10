@@ -16,6 +16,7 @@
       display: flex;
       flex-wrap: wrap;
       align-items: center;
+      align-content: center;
       justify-content: center;
       gap: 20px;
       padding: 20px;
@@ -46,8 +47,8 @@
         You need to enable JavaScript to run this app.
     </noscript>
 
-    <!-- Large: 400x400, default 32x32 grid -->
-    <div data-avatar style="width:400px;height:400px"></div>
+    <!-- Large: 400x400, 36px cells (3× default ~12px) → 11×11 grid -->
+    <div data-avatar data-cell-size="36" style="width:400px;height:400px"></div>
 
     <!-- Medium: 200x200, 16x16 grid -->
     <div data-avatar data-grid-size="16" style="width:200px;height:200px"></div>
@@ -58,8 +59,8 @@
     <!-- Wide banner: 600x150 -->
     <div data-avatar data-grid-size="12" style="width:600px;height:150px"></div>
 
-    <!-- Tiny icon: 48x48 -->
-    <div data-avatar data-cell-size="6" style="width:48px;height:48px"></div>
+    <!-- Tiny icon: 48x48, 4px cells (0.66× of 6px) → 12×12 grid -->
+    <div data-avatar data-cell-size="4" style="width:48px;height:48px"></div>
 
 
     <script type="module" src="/src/index.js"></script>

@@ -502,9 +502,11 @@ cellSize bSize size =
     min size.height size.width // bSize
 
 
+-- The LW pattern's natural center is at cell-coord (0.5, -0.5), so the grid
+-- origin is shifted to align that half-cell offset with the grid's center.
 gridCoords : Int -> Index -> ( Int, Int )
 gridCoords bSize ( x, y ) =
-    ( modBy bSize (x + bSize // 2) + 1
+    ( modBy bSize (x + bSize // 2 - 1) + 1
     , modBy bSize (y + bSize // 2) + 1
     )
 
