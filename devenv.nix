@@ -29,9 +29,14 @@
       bunx vite preview
     '';
 
-    deploy.exec = ''
+    # Build optimized assets and copy them into the lakin.ca personal site,
+    # replacing the existing avatar embed entirely.
+    copy-to-lakin.exec = ''
       build-opt
-      rsync -azP ./build/ lakin@lakin.ca:~/webapps/www.lakin.ca/source/avatar/
+      DEST="$HOME/personal-repos/lakin.ca/public/avatar"
+      mkdir -p "$DEST"
+      rsync -a --delete build/ "$DEST/"
+      echo "Synced build/ to $DEST"
     '';
   };
 }

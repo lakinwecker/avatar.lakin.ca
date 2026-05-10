@@ -7,5 +7,15 @@ export default defineConfig({
   build: {
     outDir: "build",
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        entryFileNames: "avatar.js",
+        chunkFileNames: "avatar-[name].js",
+        assetFileNames: (info) => {
+          const ext = info.name.split(".").pop();
+          return ext === "css" ? "avatar.css" : "assets/[name][extname]";
+        },
+      },
+    },
   },
 });

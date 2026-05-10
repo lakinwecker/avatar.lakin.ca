@@ -43,15 +43,30 @@ export function init(node, opts = {}) {
   return app;
 }
 
-// Auto-init: find all elements with data-avatar attribute
-document.querySelectorAll("[data-avatar]").forEach((node) => {
+function initFromAttrs(node) {
+  if (node.dataset.avatarInited) return;
+  node.dataset.avatarInited = "true";
   const opts = {};
   if (node.dataset.gridSize) opts.gridSize = parseInt(node.dataset.gridSize);
   if (node.dataset.cellSize) opts.cellSize = parseInt(node.dataset.cellSize);
   init(node, opts);
-});
+}
 
-// Fallback: init on #root if it exists and hasn't been initialized
+// Initial pass: any [data-avatar] elements already in the DOM.
+document.querySelectorAll("[data-avatar]").forEach(initFromAttrs);
+
+// Watch for [data-avatar] elements added later (e.g. by React/Astro islands).
+new MutationObserver((mutations) => {
+  for (const m of mutations) {
+    for (const node of m.addedNodes) {
+      if (node.nodeType !== 1) continue;
+      if (node.matches?.("[data-avatar]")) initFromAttrs(node);
+      node.querySelectorAll?.("[data-avatar]").forEach(initFromAttrs);
+    }
+  }
+}).observe(document.body, { childList: true, subtree: true });
+
+// Fallback: init on #root if it exists and hasn't been initialized.
 const root = document.getElementById("root");
 if (root && !root.dataset.avatar && !root.children.length) {
   init(root);
