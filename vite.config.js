@@ -4,6 +4,7 @@ import elmPlugin from "vite-plugin-elm";
 export default defineConfig({
   plugins: [elmPlugin()],
   publicDir: "public",
+  base: "/avatar/",
   build: {
     outDir: "build",
     emptyOutDir: true,

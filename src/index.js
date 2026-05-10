@@ -2,6 +2,7 @@
    Licensed under the GPL v3.0
    See LICENSE for more information. */
 import "animate.css";
+import "./avatar.css";
 import { Elm } from "./Main.elm";
 
 const DEFAULT_GRID_SIZE = 32;
@@ -41,6 +42,10 @@ export function init(node, opts = {}) {
   observer.observe(node);
 
   return app;
+}
+
+if (typeof window !== "undefined") {
+  window.LakinAvatar = { init };
 }
 
 function initFromAttrs(node) {
