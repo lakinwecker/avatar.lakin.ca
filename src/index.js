@@ -21,10 +21,23 @@ export function init(node, opts = {}) {
   const mount = document.createElement("div");
   node.appendChild(mount);
 
-  return Elm.Main.init({
+  const app = Elm.Main.init({
     node: mount,
     flags: { size: { width, height }, gridSize },
   });
+
+  const observer = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const r = entry.contentRect;
+      app.ports.resize.send({
+        width: Math.round(r.width),
+        height: Math.round(r.height),
+      });
+    }
+  });
+  observer.observe(node);
+
+  return app;
 }
 
 // Auto-init: find all elements with data-avatar attribute

@@ -3,16 +3,18 @@
 -- See LICENSE for more information.
 
 
-module Main exposing (main)
+port module Main exposing (main)
 
 import Browser
-import Browser.Events as Events
 import Html exposing (Html, Attribute, div, text)
 import Html.Keyed as Keyed
 import Html.Lazy as Lazy
 import Html.Attributes exposing (style, attribute)
 import Dict
 import Time
+
+
+port resize : (Size -> msg) -> Sub msg
 
 
 ---- Base Types ----
@@ -430,7 +432,7 @@ loadNextCell model =
 
 
 type Msg
-    = BrowserResize Int Int
+    = ContainerResize Size
     | Tick Time.Posix
 
 
@@ -452,12 +454,8 @@ update msg model =
                     in
                         ( { model | board = newBoard }, Cmd.none )
 
-        BrowserResize w h ->
-            let
-                newSize =
-                    { width = w, height = h }
-            in
-                ( { model | size = newSize }, Cmd.none )
+        ContainerResize newSize ->
+            ( { model | size = newSize }, Cmd.none )
 
 
 
@@ -607,7 +605,7 @@ view model =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Events.onResize BrowserResize
+        [ resize ContainerResize
         , Time.every
             (case model.state of
                 Evolving ->
